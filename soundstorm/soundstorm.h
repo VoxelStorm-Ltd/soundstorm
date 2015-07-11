@@ -1,0 +1,237 @@
+#ifndef SOUNDSTORM_H_INCLUDED
+#define SOUNDSTORM_H_INCLUDED
+
+#include <vector>
+#include <list>
+#include <queue>
+#include <thread>
+#include <portaudiocpp/PortAudioCpp.hxx>
+#include <ogg/os_types.h>
+#include <vorbis/vorbisfile.h>
+#include "vmath.h"
+
+class soundstorm {
+  /// VoxelStorm Sound Manager
+  ///
+  /// define DEBUG_SOUNDSTORM for detailed debugging output
+  /// define SOUNDSTORM_NO_SSE to avoid using Intel SSE intrinsics
+public:
+  enum channel_type : size_t {                        // output channels used as array indices
+    /// see http://en.wikipedia.org/wiki/Surround_sound#Standard_speaker_channels
+    /// and http://xiph.org/vorbis/doc/vorbisfile/ov_read.html
+    FRONT_LEFT   = 0,                                 // standard stereo
+    FRONT_RIGHT  = 1,                                 // standard stereo
+    LEFT         = 0,                                 // default stereo alias for FRONT_LEFT
+    RIGHT        = 1,                                 // default stereo alias for FRONT_RIGHT
+    CENTRE       = 2,                                 // 1.0 mono
+    BACK_LEFT    = 4,                                 // 4.0 quad, 5.0, 6.0 (not surround), 7.0+
+    BACK_RIGHT   = 5,                                 // 4.0 quad, 5.0, 6.0 (not surround), 7.0+
+    SUBWOOFER    = 5,                                 // 5.1 (?)
+    CENTRE_LEFT  = 6,                                 // 7.0, 11.0
+    CENTRE_RIGHT = 7,                                 // 7.0, 11.0
+    BACK_CENTRE  = 8,                                 // 3.0 surr, 4.0 surr, 6.0, 6.0 side
+    SIDE_LEFT    = 9,                                 // 5.0 side+, 7.0+
+    SIDE_RIGHT   = 10,                                // 5.0 side+, 7.0+
+    HIGH_LEFT    = 11,                                // 9.0+
+    HIGH_RIGHT   = 12                                 // 9.0+
+  };
+  struct ear {
+    /// A listener located in 3D space and having an orientation
+    Vector3f position;                                // absolute relative position in 3D space
+    Vector3f orientation = Vector3f(0.0, 0.0, 1.0);   // normalised orientation vector
+  };
+  struct soundeffect {
+    /// Stored uncompressed sound effects in memory
+    float const *buffer = nullptr;                    // the sound sample itself, in 32bit float format
+    size_t buffersize = 0;                            // the size of the buffer
+    std::vector<float> envelope;                      // its volume envelope
+    float hdr_scale = 1.0;                            // fraction of max dynamic range, from 0 to 1 (or more to boost)
+  };
+  struct sound {
+    /// A currently playing sound
+    soundeffect *effect = nullptr;                    // the library effect this is playing
+    Vector3f position;                                // its location in 3D space
+    Vector3f velocity;                                // its cached velocity through the medium
+    float volume = 1.0;                               // fraction of max effect volume, from 0 to 1 (or more to boost)
+    float seek = 0.0;                                 // seek position inside the buffer, in buffer frames - floating point!
+    float seek_end = 0.0;                             // where to cut off at before end of sample, 0 means play to the end
+    float seek_speed = 1.0;                           // how fast we're playing, can be negative but sound won't finish normally
+    sound *next_sound = nullptr;                      // sound to play immediately following this, if any
+    unsigned int channel = 0;                         // which channel it's heard on - one sound per output channel!
+    sound(soundeffect *effect,
+          Vector3f const &position,
+          Vector3f const &velocity,
+          float volume = 1.0,
+          float seek = 0.0,
+          float seek_end = 0.0,
+          float seek_speed = 1.0,
+          sound *next_sound = nullptr,
+          unsigned int channel = 0)
+      : effect(effect),
+        position(position),
+        velocity(velocity),
+        volume(volume),
+        seek(seek),
+        seek_end(seek_end),
+        seek_speed(seek_speed),
+        next_sound(next_sound),
+        channel(channel) {
+      /// Specific constructor
+    }
+  };
+  using soundgroup = std::vector<sound*>;             // all of the channel components that make up a sound
+  struct music_buffer {
+    unsigned char const *buffer = nullptr;            // the buffer containing encoded music, in ogg vorbis format
+    ogg_int64_t buffersize = 0;                       // the size of the buffer
+  };
+  struct deck;                                        // forward declaration for next struct
+  struct music {
+    soundstorm *parent = nullptr;                     // pointer back to the class it belongs to, for passing to callbacks
+    deck *parent_deck = nullptr;                      // what deck it's being played on
+    music_buffer *buffer = nullptr;                   // where this is stored
+    ogg_int64_t seek = 0;                             // stream style position offset
+  };
+  struct deck {
+    /// A music playback deck
+    #ifdef DEBUG_SOUNDSTORM
+      unsigned int checkvalue = 123456;               // debug check value, this is the nearest we get to runtime type safety
+    #endif // DEBUG_SOUNDSTORM
+    std::queue<music*> playlist;                      // what's playing now (front) and what to play next
+    float volume           __attribute__((__aligned__(16))) = 1.0;    // how loud to play this current deck, 0-1 (but may exceed 1 for special effects)
+    float volume_target    __attribute__((__aligned__(16))) = 1.0;    // what to fade towards, if anything
+    float volume_fadespeed __attribute__((__aligned__(16))) = 0.0;    // how fast to fade
+    bool repeat = true;                               // at the end of the playlist last entry repeats indefinitely - if not, deck outputs silence
+    std::vector<float> buffer_l[2];                   // ping-pong buffer pair, left channel
+    std::vector<float> buffer_r[2];                   // ping-pong buffer pair, right channel
+    unsigned int buffer_read = 0;                     // which ping-pong buffer we're reading from
+    unsigned int buffer_read_seek = 0;                // where in the buffer we've read to
+    bool buffer_needs_filled = true;                  // whether the currently selected write buffer needs to be filled
+    OggVorbis_File *oggfile = nullptr;                // the internal ogg vorbis handle
+  };
+
+  bool enabled = false;                               // whether to use the sound system - if disabled, all play functions exit early
+
+private:
+  unsigned int num_devices = 0;                       // number of known devices
+  unsigned int channels = 2;                          // output channels
+  float samplerate = 44100.0;                         // output sample rate
+  unsigned long frames_per_buffer = 64;               // frames per buffer
+  static float constexpr speed_of_sound = 343.0;      // speed of sound in air, m/s
+  static float constexpr ear_offset = 0.115;          // distance of ear from the centre of the head, metres
+  static float constexpr head_shadow_time = 0.000660; // measured max pan head shadow time, seconds (see http://en.wikipedia.org/wiki/Interaural_time_difference#Duplex_theory)
+  // how much extra time delay to add to the far sound for head shadow effect at full pan:
+  static float constexpr head_shadow_delay_max = head_shadow_time - (ear_offset / speed_of_sound);
+  // how much the opposite ear is shadowed by the head, realistic ~= 6.4dB, we're going for somewhat of an exaggeration:
+  static float constexpr head_shadow_attenuation = 0.9;
+  unsigned int numdecks = 2;                          // how many music decks we're currently using
+  unsigned int deck_buffer_size = samplerate * 2;     // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
+
+  portaudio::AutoSystem audio_system_auto;
+  portaudio::System *audio_system = nullptr;
+  portaudio::Device const *audio_device = nullptr;
+
+  //portaudio::DirectionSpecificStreamParameters *stream_in_params  = nullptr;
+  portaudio::DirectionSpecificStreamParameters *stream_out_params = nullptr;
+  portaudio::StreamParameters                  *stream_params     = nullptr;
+  portaudio::MemFunCallbackStream<soundstorm>  *stream            = nullptr;
+
+  float hdr_window_top_min __attribute__((__aligned__(16))) = 1.0;                // the high dynamic range window's upper limit can't fall below this
+  float hdr_window_top     __attribute__((__aligned__(16))) = hdr_window_top_min; // the high dynamic range window's upper limit, may exceed 1
+  float hdr_window_bottom  __attribute__((__aligned__(16))) = 0.0;                // minimum hdr_scale for sounds to get played
+  //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer;   // amount subtracted per buffer fill
+  float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995;              // scaling multiplier per buffer fill
+
+  float volume = 1.0;                                 // global output volume control, from 0 to 1 (although possible to go outside this)
+
+  Vector3f listener_position;                         // where the listener is
+  Quatf    listener_rotation;                         // which way the listener's facing
+  Vector3f listener_velocity;                         // listener's velocity through the medium
+
+  std::vector<ear> ears;                              // the listeners for each output channel
+  std::vector<soundeffect*> effect_library;           // the sound effects
+  std::list<sound*> playing;                          // currently playing sounds
+  std::vector<music_buffer*> music_library;           // the music buffers
+  std::vector<deck> decks;                            // music decks control what music is currently playing
+
+  std::thread *streamer_thread = nullptr;             // thread for the streaming decoder
+  bool streamer_run = true;                           // whether to keep running the streamer
+
+  #ifdef DEBUG_SOUNDSTORM
+    float session_max_hdr_window_top    = hdr_window_top;       // keep track of some session-wide extremes for debugging
+    float session_max_hdr_window_bottom = hdr_window_bottom;
+    unsigned int session_max_simultaneous_sounds = 0;
+    float session_min_distance = 10000.0;
+    float session_max_distance = 0.0;
+  #endif // DEBUG_SOUNDSTORM
+
+public:
+  soundstorm();
+  ~soundstorm();
+
+  void init_device();
+  void shutdown_device();
+  void restart_device();
+  void start_streamer();
+  void stop_streamer();
+
+  int mixer(void const *buffer_in,
+            void *buffer_out,
+            unsigned long frames,
+            PaStreamCallbackTimeInfo const *time_info,
+            PaStreamCallbackFlags status_flags);
+  void streamer();
+  static size_t ogg_callback_read( void *ptr, size_t size, size_t count, void *datasource);
+  static int    ogg_callback_seek( void *datasource, ogg_int64_t offset, int origin);
+  static int    ogg_callback_close(void *datasource);
+  static long   ogg_callback_tell( void *datasource);
+
+  unsigned int get_device_default() const;
+  unsigned int get_device_current() const;
+  void get_device_list(         std::vector<std::pair<unsigned int, std::string>> &target_list) const;
+  void get_device_list_out_only(std::vector<std::pair<unsigned int, std::string>> &target_list) const;
+  void get_device_list_in_only( std::vector<std::pair<unsigned int, std::string>> &target_list) const;
+  void set_device(unsigned int new_device_index);
+  // statistics
+  double get_cpu_usage() const;
+  double get_sample_rate() const;
+  double get_time() const;
+  void dump_stats() const;
+  void dump_session_report() const;
+  void dump_device_info();
+
+  // state
+  Vector3f const &get_listener_position() const;
+  Quatf    const &get_listener_rotation() const;
+  Vector3f const &get_listener_velocity() const;
+  void set_listener_position(Vector3f const &newposition);
+  void set_listener_rotation(Quatf    const &newrotation);
+  void set_listener_velocity(Vector3f const &newvelocity);
+  void set_listener_position_and_rotation(Vector3f const &newposition, Quatf const &newrotation);
+  void update_ears();
+
+  // library
+  soundeffect *get_effect(unsigned int effect_id) const;
+  music_buffer *get_music(unsigned int music_id) const;
+  unsigned int load(unsigned char const *buffer, size_t buffersize, float hdr_scale = 1.0);
+  unsigned int music_load(unsigned char const *buffer, size_t buffersize);
+
+  // playback control
+  void play(     unsigned int effect_id, Vector3f const &position, Vector3f const &velocity, float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
+  void play(     Vector3f const &position, Vector3f const &velocity, soundeffect *effect,    float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
+  void play_loop(unsigned int effect_id, Vector3f const &position, Vector3f const &velocity, float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
+  void play_loop(Vector3f const &position, Vector3f const &velocity, soundeffect *effect,    float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
+  music *music_queue(unsigned int deck_id, unsigned int music_id);
+  void set_music_volume(unsigned int deck_id, float newvolume);
+  void fade_music_volume(unsigned int deck_id, float newvolume, float seconds_to_take);
+  void crossfade_music(float seconds_to_take, unsigned int deck_from = 0, unsigned int deck_to = 1);
+  void stop(          soundgroup const &thissoundgroup);
+  void stop_loop(     soundgroup const &thissoundgroup);
+  void replace(       soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0);
+  void follow(        soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0);
+  void set_volume(    soundgroup const &thissoundgroup, float newvolume);
+  void set_position(  soundgroup const &thissoundgroup, Vector3f const &newposition);
+  void set_seek_speed(soundgroup const &thissoundgroup, float newspeed);
+  void music_clear(unsigned int deck_id);
+};
+
+#endif // SOUNDSTORM_H_INCLUDED
