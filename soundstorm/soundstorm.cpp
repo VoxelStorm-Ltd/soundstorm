@@ -10,7 +10,6 @@
 #include <portaudiocpp/PortAudioCpp.hxx>
 #include <ogg/ogg.h>
 #include <vorbis/vorbisfile.h>
-#include "vmath.h"
 
 soundstorm::soundstorm() try
   : audio_system_auto(false),             // don't initialise portaudio automatically
