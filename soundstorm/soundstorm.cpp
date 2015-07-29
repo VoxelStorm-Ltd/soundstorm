@@ -1,15 +1,7 @@
 #include "soundstorm.h"
-#include <iostream>
-#include <cmath>
-#include <limits>
 #ifndef NDEBUG
   #include <cassert>
 #endif
-#include <boost/range/iterator_range.hpp>
-#include <chrono>
-#include <portaudiocpp/PortAudioCpp.hxx>
-#include <ogg/ogg.h>
-#include <vorbis/vorbisfile.h>
 
 soundstorm::soundstorm() try
   : audio_system_auto(false),             // don't initialise portaudio automatically
