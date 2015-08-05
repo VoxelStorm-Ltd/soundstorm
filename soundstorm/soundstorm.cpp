@@ -1,4 +1,8 @@
 #include "soundstorm.h"
+#include "platform_defines.h"
+#ifdef PLATFORM_LINUX
+  #include "pa_linux_alsa.h"
+#endif // PLATFORM_LINUX
 #ifndef NDEBUG
   #include <cassert>
 #endif
@@ -63,9 +67,17 @@ soundstorm::~soundstorm() {
   /// Default destructor
   dump_session_report();
   stop_streamer();
+  auto playing_backup = playing;                // so we can delete these after
   playing.clear();
   decks.clear();
   stream->abort();                              // tell the stream to stop without waiting for the buffers to finish
+  for(auto &it : playing_backup) {
+    delete it;
+  }
+  for(auto &it : effect_library) {
+    delete it;
+  }
+  effect_library.clear();
   shutdown_device();
   audio_system->terminate();                    // release audio resources
 }
@@ -117,6 +129,16 @@ void soundstorm::init_device() {
     *this,                                                    // class instance
     &soundstorm::mixer);                                      // member function to call
 
+  #ifdef PLATFORM_LINUX
+    int alsacard;
+    int const error = PaAlsa_GetStreamOutputCard(stream->paStream(), &alsacard);
+    if(error != 0) {
+      std::cout << "SoundStorm: Error querying ALSA for stream output card: " << error << std::endl;
+    }
+    std::cout << "SoundStorm: Requesting realtime scheduling from ALSA on card " << alsacard << std::endl;
+    PaAlsa_EnableRealtimeScheduling(stream->paStream(), true);
+  #endif // PLATFORM_LINUX
+
   stream->start();                                            // start the stream
   enabled = true;
   std::cout << "SoundStorm: Initialised." << std::endl;
@@ -131,6 +153,10 @@ void soundstorm::shutdown_device() {
     delete stream;
     stream = nullptr;
   }
+  delete stream_out_params;
+  stream_out_params = nullptr;
+  delete stream_params;
+  stream_params = nullptr;
   enabled = false;
   std::cout << "SoundStorm: Shutdown complete." << std::endl;
 }
