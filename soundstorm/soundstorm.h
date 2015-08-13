@@ -15,6 +15,7 @@ class soundstorm {
   ///
   /// define DEBUG_SOUNDSTORM for detailed debugging output
   /// define SOUNDSTORM_NO_SSE to avoid using Intel SSE intrinsics
+  /// define NSOUND to disable all sound output
 public:
   enum channel_type : size_t {                        // output channels used as array indices
     /// see http://en.wikipedia.org/wiki/Surround_sound#Standard_speaker_channels
@@ -38,33 +39,33 @@ public:
   struct ear {
     /// A listener located in 3D space and having an orientation
     Vector3f position;                                // absolute relative position in 3D space
-    Vector3f orientation = Vector3f(0.0, 0.0, 1.0);   // normalised orientation vector
+    Vector3f orientation = Vector3f(0.0f, 0.0f, 1.0f);// normalised orientation vector
   };
   struct soundeffect {
     /// Stored uncompressed sound effects in memory
     float const *buffer = nullptr;                    // the sound sample itself, in 32bit float format
     size_t buffersize = 0;                            // the size of the buffer
     std::vector<float> envelope;                      // its volume envelope
-    float hdr_scale = 1.0;                            // fraction of max dynamic range, from 0 to 1 (or more to boost)
+    float hdr_scale = 1.0f;                           // fraction of max dynamic range, from 0 to 1 (or more to boost)
   };
   struct sound {
     /// A currently playing sound
     soundeffect *effect = nullptr;                    // the library effect this is playing
     Vector3f position;                                // its location in 3D space
     Vector3f velocity;                                // its cached velocity through the medium
-    float volume = 1.0;                               // fraction of max effect volume, from 0 to 1 (or more to boost)
-    float seek = 0.0;                                 // seek position inside the buffer, in buffer frames - floating point!
-    float seek_end = 0.0;                             // where to cut off at before end of sample, 0 means play to the end
-    float seek_speed = 1.0;                           // how fast we're playing, can be negative but sound won't finish normally
+    float volume     = 1.0f;                          // fraction of max effect volume, from 0 to 1 (or more to boost)
+    float seek       = 0.0f;                          // seek position inside the buffer, in buffer frames - floating point!
+    float seek_end   = 0.0f;                          // where to cut off at before end of sample, 0 means play to the end
+    float seek_speed = 1.0f;                          // how fast we're playing, can be negative but sound won't finish normally
     sound *next_sound = nullptr;                      // sound to play immediately following this, if any
     unsigned int channel = 0;                         // which channel it's heard on - one sound per output channel!
     sound(soundeffect *effect,
           Vector3f const &position,
           Vector3f const &velocity,
-          float volume = 1.0,
-          float seek = 0.0,
-          float seek_end = 0.0,
-          float seek_speed = 1.0,
+          float volume     = 1.0f,
+          float seek       = 0.0f,
+          float seek_end   = 0.0f,
+          float seek_speed = 1.0f,
           sound *next_sound = nullptr,
           unsigned int channel = 0)
       : effect(effect),
@@ -114,17 +115,17 @@ public:
 private:
   unsigned int num_devices = 0;                       // number of known devices
   unsigned int channels = 2;                          // output channels
-  float samplerate = 44100.0;                         // output sample rate
+  float samplerate = 44100.0f;                        // output sample rate
   unsigned long frames_per_buffer = 64;               // frames per buffer
-  static float constexpr speed_of_sound = 343.0;      // speed of sound in air, m/s
-  static float constexpr ear_offset = 0.115;          // distance of ear from the centre of the head, metres
-  static float constexpr head_shadow_time = 0.000660; // measured max pan head shadow time, seconds (see http://en.wikipedia.org/wiki/Interaural_time_difference#Duplex_theory)
+  static float constexpr speed_of_sound = 343.0f;     // speed of sound in air, m/s
+  static float constexpr ear_offset = 0.115f;         // distance of ear from the centre of the head, metres
+  static float constexpr head_shadow_time = 0.000660f;// measured max pan head shadow time, seconds (see http://en.wikipedia.org/wiki/Interaural_time_difference#Duplex_theory)
   // how much extra time delay to add to the far sound for head shadow effect at full pan:
   static float constexpr head_shadow_delay_max = head_shadow_time - (ear_offset / speed_of_sound);
   // how much the opposite ear is shadowed by the head, realistic ~= 6.4dB, we're going for somewhat of an exaggeration:
-  static float constexpr head_shadow_attenuation = 0.9;
+  static float constexpr head_shadow_attenuation = 0.9f;
   unsigned int numdecks = 2;                          // how many music decks we're currently using
-  unsigned int deck_buffer_size = samplerate * 2;     // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
+  unsigned int deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f); // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
 
   portaudio::AutoSystem audio_system_auto;
   portaudio::System *audio_system = nullptr;
@@ -135,11 +136,11 @@ private:
   portaudio::StreamParameters                  *stream_params     = nullptr;
   portaudio::MemFunCallbackStream<soundstorm>  *stream            = nullptr;
 
-  float hdr_window_top_min __attribute__((__aligned__(16))) = 1.0;                // the high dynamic range window's upper limit can't fall below this
+  float hdr_window_top_min __attribute__((__aligned__(16))) = 1.0f;               // the high dynamic range window's upper limit can't fall below this
   float hdr_window_top     __attribute__((__aligned__(16))) = hdr_window_top_min; // the high dynamic range window's upper limit, may exceed 1
-  float hdr_window_bottom  __attribute__((__aligned__(16))) = 0.0;                // minimum hdr_scale for sounds to get played
+  float hdr_window_bottom  __attribute__((__aligned__(16))) = 0.0f;               // minimum hdr_scale for sounds to get played
   //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer;   // amount subtracted per buffer fill
-  float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995;              // scaling multiplier per buffer fill
+  float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995f;             // scaling multiplier per buffer fill
 
   float volume = 1.0;                                 // global output volume control, from 0 to 1 (although possible to go outside this)
 
