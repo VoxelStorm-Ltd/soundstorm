@@ -858,6 +858,9 @@ void soundstorm::update_ears() {
 
 soundstorm::soundeffect *soundstorm::get_effect(unsigned int effect_id) const {
   /// Look up an effect in the library
+  #ifdef NSOUND
+    return nullptr;
+  #endif // NSOUND
   #ifndef NDEBUG
     if(effect_id >= effect_library.size()) {
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with id " << effect_id << " outside library size " << effect_library.size() << "!" << std::endl;
@@ -873,6 +876,9 @@ soundstorm::soundeffect *soundstorm::get_effect(unsigned int effect_id) const {
 
 soundstorm::music_buffer *soundstorm::get_music(unsigned int music_id) const {
   /// Look up a music track in the library
+  #ifdef NSOUND
+    return nullptr;
+  #endif // NSOUND
   #ifndef NDEBUG
     if(music_id >= music_library.size()) {
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with music_id " << music_id << " exceeding library size!" << std::endl;
