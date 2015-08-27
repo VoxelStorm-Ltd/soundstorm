@@ -547,7 +547,7 @@ size_t soundstorm::ogg_callback_read(void *ptr, size_t size, size_t count, void 
     }
   #endif // DEBUG_SOUNDSTORM
 
-  unsigned int const bytes = size * count;
+  unsigned int const bytes = static_cast<unsigned int>(size * count);
   unsigned int i = 0;
   for(; i != bytes; ++i) {
     target[i] = thismusic->buffer->buffer[thismusic->seek];
@@ -893,7 +893,7 @@ unsigned int soundstorm::load(unsigned char const *buffer, size_t buffersize, fl
   #ifdef NSOUND
     return 0;
   #endif // NSOUND
-  unsigned int const effectnum = effect_library.size();
+  unsigned int const effectnum = static_cast<unsigned int>(effect_library.size());
   soundeffect *thiseffect = new soundeffect;
   thiseffect->buffer = reinterpret_cast<float const*>(buffer);    // treat the buffer as one of 32bit floats
   thiseffect->buffersize = buffersize / sizeof(float);            // convert to our size in samples
@@ -921,7 +921,7 @@ unsigned int soundstorm::music_load(unsigned char const *buffer, size_t buffersi
   #ifdef NSOUND
     return 0;
   #endif // NSOUND
-  unsigned int const tracknum = music_library.size();
+  unsigned int const tracknum = static_cast<unsigned int>(music_library.size());
   music_buffer *thismusic = new music_buffer;
   thismusic->buffer = buffer;
   thismusic->buffersize = buffersize;
