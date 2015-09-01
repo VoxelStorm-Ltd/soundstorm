@@ -383,7 +383,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
     #else
       _mm_store_ss(&hdr_window_top, _mm_max_ss(_mm_set_ss(hdr_window_top), _mm_set_ss(max_level)));  // SSE intrinsicts: branchless max
     #endif // SOUNDSTORM_NO_SSE || DEBUG_SOUNDSTORM
-    float const final_scale = volume / hdr_window_top;                // final global volume control and HDR window scaling
+    float const final_scale = volume_master / hdr_window_top;         // final global volume control and HDR window scaling
     for(unsigned int channel = 0; channel != channels; ++channel) {   // scale all channels
       out[channel][i] *= final_scale;
     }
@@ -854,6 +854,13 @@ void soundstorm::update_ears() {
     thisear.orientation.normalise();
     thisear.position += listener_position;
   }
+}
+
+float soundstorm::get_master_volume() const {
+  return volume_master;
+}
+void soundstorm::set_master_volume(float newvolume) {
+  volume_master = newvolume;
 }
 
 soundstorm::soundeffect *soundstorm::get_effect(unsigned int effect_id) const {

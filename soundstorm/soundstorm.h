@@ -142,7 +142,7 @@ private:
   //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer;   // amount subtracted per buffer fill
   float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995f;             // scaling multiplier per buffer fill
 
-  float volume = 1.0;                                 // global output volume control, from 0 to 1 (although possible to go outside this)
+  float volume_master = 1.0;                          // global output volume control, from 0 to 1 (although possible to go outside this)
 
   Vector3f listener_position;                         // where the listener is
   Quatf    listener_rotation;                         // which way the listener's facing
@@ -209,6 +209,8 @@ public:
   void set_listener_velocity(Vector3f const &newvelocity);
   void set_listener_position_and_rotation(Vector3f const &newposition, Quatf const &newrotation);
   void update_ears();
+  float get_master_volume() const;
+  void set_master_volume(float newvolume);
 
   // library
   soundeffect *get_effect(unsigned int effect_id) const;
