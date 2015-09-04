@@ -34,19 +34,6 @@ soundstorm::soundstorm() try
     return;
   }
 
-  // decks must be initialised before the mixer starts
-  decks.resize(numdecks);
-  for(deck &thisdeck : decks) {
-    // initialise deck output buffers to zero
-    thisdeck.buffer_l[0].resize(deck_buffer_size, 0.0);
-    thisdeck.buffer_r[0].resize(deck_buffer_size, 0.0);
-    thisdeck.buffer_l[1].resize(deck_buffer_size, 0.0);
-    thisdeck.buffer_r[1].resize(deck_buffer_size, 0.0);
-    //thisdeck.buffer_read = 1;             // so that buffer 0 will be pre-filled
-    thisdeck.buffer_read = 0;
-    thisdeck.buffer_needs_filled = true;
-  }
-
   // select an appropriate sound device
   audio_device = &audio_system->defaultOutputDevice();
   dump_device_info();                     // this also updates num_devices
@@ -139,11 +126,29 @@ void soundstorm::init_device() {
     PaAlsa_EnableRealtimeScheduling(stream->paStream(), true);
   #endif // PLATFORM_LINUX
 
+  samplerate = static_cast<float>(stream->sampleRate());                        // cache sample rate
+  deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f);              // update buffer size
+  resize_decks();                                                               // needs to happen before mixer starts
   #ifndef NSOUND
     stream->start();                                          // start the stream
   #endif // NSOUND
   enabled = true;
   std::cout << "SoundStorm: Initialised." << std::endl;
+}
+void soundstorm::resize_decks() {
+  /// Resize the decks to the correct number and buffer size, and reset the buffers
+  // decks must be initialised before the mixer starts
+  decks.resize(numdecks);
+  for(deck &thisdeck : decks) {
+    // initialise deck output buffers to zero
+    thisdeck.buffer_l[0].resize(deck_buffer_size, 0.0f);
+    thisdeck.buffer_r[0].resize(deck_buffer_size, 0.0f);
+    thisdeck.buffer_l[1].resize(deck_buffer_size, 0.0f);
+    thisdeck.buffer_r[1].resize(deck_buffer_size, 0.0f);
+    //thisdeck.buffer_read = 1;             // so that buffer 0 will be pre-filled
+    thisdeck.buffer_read = 0;
+    thisdeck.buffer_needs_filled = true;
+  }
 }
 void soundstorm::shutdown_device() {
   /// Shut down the current output device and free it, in preparation of exit or re-init
@@ -457,48 +462,44 @@ void soundstorm::streamer() {
         #ifdef DEBUG_SOUNDSTORM
           //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer " << buffer_write << " refilling..." << std::endl;
         #endif // DEBUG_SOUNDSTORM
-        for(unsigned int i = 0; i != deck_buffer_size; ++i) {
-          //thisdeck.buffer_l[buffer_write][i] = 0.0;                     // placeholder
-          //thisdeck.buffer_r[buffer_write][i] = 0.0;
-
-          int current_section;    // what the hell is this even used for?
-          //unsigned int offset = 0;
-          //char *buffer_start = thisdeck.buffer_r[buffer_write][offset];
+        for(unsigned int i = 0; i != deck_buffer_size;) {
+          int current_section;        // what the hell is this even used for?
           float **pcm_channels;
-          //long samples_read = ov_read_float(thisdeck.oggfile, &pcm_channels, sizeof(deck_buffer_size), &current_section);
-          long samples_read = 0;
+          int samples_read;
           do {
-            samples_read = ov_read_float(thisdeck.oggfile, &pcm_channels, 1, &current_section);
-            //if(samples_read < 0) {
-              switch(samples_read) {
-              case 0:               // EOF
-                //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill got EOF " << samples_read << std::endl;
-                break;
-              case OV_HOLE:         // indicates there was an interruption in the data. (one of: garbage between pages, loss of sync followed by recapture, or a corrupt page)
-                #ifdef DEBUG_SOUNDSTORM
-                  //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_HOLE " << samples_read << std::endl;
-                #endif // DEBUG_SOUNDSTORM
-                break;              // this is normal when switching tracks
-              case OV_EBADLINK:     // indicates that an invalid stream section was supplied to libvorbisfile, or the requested link is corrupt.
-                std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EBADLINK " << samples_read << std::endl;
-                break;
-              case OV_EINVAL:       // indicates the initial file headers couldn't be read or are corrupt, or that the initial open call for vf failed.
-                std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EINVAL " << samples_read << std::endl;
-                break;
-              }
-            //}
+            samples_read = static_cast<int>(ov_read_float(thisdeck.oggfile, &pcm_channels, deck_buffer_size - i, &current_section));
+            switch(samples_read) {
+            case 0:               // EOF
+              //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill got EOF " << samples_read << std::endl;
+              break;
+            case OV_HOLE:         // indicates there was an interruption in the data. (one of: garbage between pages, loss of sync followed by recapture, or a corrupt page)
+              #ifdef DEBUG_SOUNDSTORM
+                //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_HOLE " << samples_read << std::endl;
+              #endif // DEBUG_SOUNDSTORM
+              break;              // this is normal when switching tracks
+            case OV_EBADLINK:     // indicates that an invalid stream section was supplied to libvorbisfile, or the requested link is corrupt.
+              std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EBADLINK " << samples_read << std::endl;
+              break;
+            case OV_EINVAL:       // indicates the initial file headers couldn't be read or are corrupt, or that the initial open call for vf failed.
+              std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EINVAL " << samples_read << std::endl;
+              break;
+            }
           } while(samples_read <= 0);
-          thisdeck.buffer_l[buffer_write][i] = pcm_channels[LEFT ][0];
-          thisdeck.buffer_r[buffer_write][i] = pcm_channels[RIGHT][0];
-          // TODO: optimise this by reading more than one sample at a time
+          for(int s = 0; s != samples_read; ++s) {
+            thisdeck.buffer_l[buffer_write][i + s] = pcm_channels[LEFT ][s];
+            thisdeck.buffer_r[buffer_write][i + s] = pcm_channels[RIGHT][s];
+          }
+          #ifdef DEBUG_SOUNDSTORM
+            std::cout << "SoundStorm: DEBUG: streamer read " << samples_read << " bytes of " << deck_buffer_size - i << ", current_section " << current_section << std::endl;
+          #endif // DEBUG_SOUNDSTORM
+          i += samples_read;
         }
-        //std::cout << "SUPERDEBUG: read bytes: " << samples_read << std::endl;
         #ifdef DEBUG_SOUNDSTORM
           //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer " << buffer_write << " refilled" << std::endl;
         #endif // DEBUG_SOUNDSTORM
       }
     }
-    // sleep for 1/4 of buffer fill time to avoid spin-waiting
+    // sleep for 1/2 of buffer fill time to avoid spin-waiting
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<unsigned int>(1000.0f * static_cast<float>(deck_buffer_size) / samplerate / 4.0f)));
   } while(streamer_run);
 
