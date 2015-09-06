@@ -124,7 +124,7 @@ private:
   static float constexpr head_shadow_delay_max = head_shadow_time - (ear_offset / speed_of_sound);
   // how much the opposite ear is shadowed by the head, realistic ~= 6.4dB, we're going for somewhat of an exaggeration:
   static float constexpr head_shadow_attenuation = 0.9f;
-  unsigned int numdecks = 2;                          // how many music decks we're currently using
+  static unsigned int constexpr numdecks = 2;         // how many music decks we're currently using
   unsigned int deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f); // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
 
   portaudio::AutoSystem audio_system_auto;
@@ -170,6 +170,7 @@ public:
   ~soundstorm();
 
   void init_device();
+  void resize_decks();
   void shutdown_device();
   void restart_device();
   void start_streamer();
