@@ -492,7 +492,7 @@ void soundstorm::streamer() {
           #ifdef DEBUG_SOUNDSTORM
             std::cout << "SoundStorm: DEBUG: streamer read " << samples_read << " bytes of " << deck_buffer_size - i << ", current_section " << current_section << std::endl;
           #endif // DEBUG_SOUNDSTORM
-          i += samples_read;
+          i += static_cast<unsigned int>(samples_read);
         }
         #ifdef DEBUG_SOUNDSTORM
           //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer " << buffer_write << " refilled" << std::endl;
