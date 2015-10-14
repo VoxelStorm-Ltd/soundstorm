@@ -59,24 +59,24 @@ public:
     float seek_speed = 1.0f;                          // how fast we're playing, can be negative but sound won't finish normally
     sound *next_sound = nullptr;                      // sound to play immediately following this, if any
     unsigned int channel = 0;                         // which channel it's heard on - one sound per output channel!
-    sound(soundeffect *effect,
-          Vector3f const &position,
-          Vector3f const &velocity,
-          float volume     = 1.0f,
-          float seek       = 0.0f,
-          float seek_end   = 0.0f,
-          float seek_speed = 1.0f,
-          sound *next_sound = nullptr,
-          unsigned int channel = 0)
-      : effect(effect),
-        position(position),
-        velocity(velocity),
-        volume(volume),
-        seek(seek),
-        seek_end(seek_end),
-        seek_speed(seek_speed),
-        next_sound(next_sound),
-        channel(channel) {
+    sound(soundeffect *new_effect,
+          Vector3f const &new_position,
+          Vector3f const &new_velocity,
+          float new_volume     = 1.0f,
+          float new_seek       = 0.0f,
+          float new_seek_end   = 0.0f,
+          float new_seek_speed = 1.0f,
+          sound *new_next_sound = nullptr,
+          unsigned int new_channel = 0)
+      : effect(new_effect),
+        position(new_position),
+        velocity(new_velocity),
+        volume(new_volume),
+        seek(new_seek),
+        seek_end(new_seek_end),
+        seek_speed(new_seek_speed),
+        next_sound(new_next_sound),
+        channel(new_channel) {
       /// Specific constructor
     }
   };
@@ -94,29 +94,39 @@ public:
   };
   struct deck {
     /// A music playback deck
-    #ifdef DEBUG_SOUNDSTORM
-      unsigned int checkvalue = 123456;               // debug check value, this is the nearest we get to runtime type safety
-    #endif // DEBUG_SOUNDSTORM
-    std::queue<music*> playlist;                      // what's playing now (front) and what to play next
     float volume           __attribute__((__aligned__(16))) = 1.0;    // how loud to play this current deck, 0-1 (but may exceed 1 for special effects)
     float volume_target    __attribute__((__aligned__(16))) = 1.0;    // what to fade towards, if anything
     float volume_fadespeed __attribute__((__aligned__(16))) = 0.0;    // how fast to fade
-    bool repeat = true;                               // at the end of the playlist last entry repeats indefinitely - if not, deck outputs silence
+    OggVorbis_File *oggfile = nullptr;                // the internal ogg vorbis handle
+    std::queue<music*> playlist;                      // what's playing now (front) and what to play next
     std::vector<float> buffer_l[2];                   // ping-pong buffer pair, left channel
     std::vector<float> buffer_r[2];                   // ping-pong buffer pair, right channel
     unsigned int buffer_read = 0;                     // which ping-pong buffer we're reading from
     unsigned int buffer_read_seek = 0;                // where in the buffer we've read to
+    #ifdef DEBUG_SOUNDSTORM
+      unsigned int checkvalue = 123456;               // debug check value, this is the nearest we get to runtime type safety
+    #endif // DEBUG_SOUNDSTORM
+    bool repeat = true;                               // at the end of the playlist last entry repeats indefinitely - if not, deck outputs silence
     bool buffer_needs_filled = true;                  // whether the currently selected write buffer needs to be filled
-    OggVorbis_File *oggfile = nullptr;                // the internal ogg vorbis handle
   };
 
-  bool enabled = false;                               // whether to use the sound system - if disabled, all play functions exit early
-
 private:
+  float hdr_window_top_min __attribute__((__aligned__(16))) = 1.0f;               // the high dynamic range window's upper limit can't fall below this
+  float hdr_window_top     __attribute__((__aligned__(16))) = hdr_window_top_min; // the high dynamic range window's upper limit, may exceed 1
+  float hdr_window_bottom  __attribute__((__aligned__(16))) = 0.0f;               // minimum hdr_scale for sounds to get played
+  //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer;   // amount subtracted per buffer fill
+  float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995f;             // scaling multiplier per buffer fill
+
+  std::thread *streamer_thread = nullptr;             // thread for the streaming decoder
+
+  portaudio::System *audio_system = nullptr;
+  portaudio::Device const *audio_device = nullptr;
+  portaudio::AutoSystem audio_system_auto;
+
+  unsigned long frames_per_buffer = 64;               // frames per buffer
   unsigned int num_devices = 0;                       // number of known devices
   unsigned int channels = 2;                          // output channels
   float samplerate = 44100.0f;                        // output sample rate
-  unsigned long frames_per_buffer = 64;               // frames per buffer
   static float constexpr speed_of_sound = 343.0f;     // speed of sound in air, m/s
   static float constexpr ear_offset = 0.115f;         // distance of ear from the centre of the head, metres
   static float constexpr head_shadow_time = 0.000660f;// measured max pan head shadow time, seconds (see http://en.wikipedia.org/wiki/Interaural_time_difference#Duplex_theory)
@@ -127,26 +137,10 @@ private:
   static unsigned int constexpr numdecks = 2;         // how many music decks we're currently using
   unsigned int deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f); // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
 
-  portaudio::AutoSystem audio_system_auto;
-  portaudio::System *audio_system = nullptr;
-  portaudio::Device const *audio_device = nullptr;
-
   //portaudio::DirectionSpecificStreamParameters *stream_in_params  = nullptr;
   portaudio::DirectionSpecificStreamParameters *stream_out_params = nullptr;
   portaudio::StreamParameters                  *stream_params     = nullptr;
   portaudio::MemFunCallbackStream<soundstorm>  *stream            = nullptr;
-
-  float hdr_window_top_min __attribute__((__aligned__(16))) = 1.0f;               // the high dynamic range window's upper limit can't fall below this
-  float hdr_window_top     __attribute__((__aligned__(16))) = hdr_window_top_min; // the high dynamic range window's upper limit, may exceed 1
-  float hdr_window_bottom  __attribute__((__aligned__(16))) = 0.0f;               // minimum hdr_scale for sounds to get played
-  //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer;   // amount subtracted per buffer fill
-  float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995f;             // scaling multiplier per buffer fill
-
-  float volume_master = 1.0;                          // global output volume control, from 0 to 1 (although possible to go outside this)
-
-  Vector3f listener_position;                         // where the listener is
-  Quatf    listener_rotation;                         // which way the listener's facing
-  Vector3f listener_velocity;                         // listener's velocity through the medium
 
   std::vector<ear> ears;                              // the listeners for each output channel
   std::vector<soundeffect*> effect_library;           // the sound effects
@@ -154,7 +148,12 @@ private:
   std::vector<music_buffer*> music_library;           // the music buffers
   std::vector<deck> decks;                            // music decks control what music is currently playing
 
-  std::thread *streamer_thread = nullptr;             // thread for the streaming decoder
+  float volume_master = 1.0;                          // global output volume control, from 0 to 1 (although possible to go outside this)
+
+  Vector3f listener_position;                         // where the listener is
+  Quatf    listener_rotation;                         // which way the listener's facing
+  Vector3f listener_velocity;                         // listener's velocity through the medium
+
   bool streamer_run = true;                           // whether to keep running the streamer
 
   #ifdef DEBUG_SOUNDSTORM
@@ -166,6 +165,8 @@ private:
   #endif // DEBUG_SOUNDSTORM
 
 public:
+  bool enabled = false;                               // whether to use the sound system - if disabled, all play functions exit early
+
   soundstorm();
   ~soundstorm();
 
