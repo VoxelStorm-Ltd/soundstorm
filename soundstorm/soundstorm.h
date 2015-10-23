@@ -185,8 +185,8 @@ public:
   void streamer();
   static size_t ogg_callback_read( void *ptr, size_t size, size_t count, void *datasource);
   static int    ogg_callback_seek( void *datasource, ogg_int64_t offset, int origin);
-  static int    ogg_callback_close(void *datasource);
-  static long   ogg_callback_tell( void *datasource);
+  static int    ogg_callback_close(void *datasource) __attribute__((__const__));
+  static long   ogg_callback_tell( void *datasource) __attribute__((__pure__));
 
   unsigned int get_device_default() const;
   unsigned int get_device_current() const;
@@ -199,19 +199,19 @@ public:
   double get_sample_rate() const;
   double get_time() const;
   void dump_stats() const;
-  void dump_session_report() const;
+  void dump_session_report() const __attribute__((__const__));
   void dump_device_info();
 
   // state
-  Vector3f const &get_listener_position() const;
-  Quatf    const &get_listener_rotation() const;
-  Vector3f const &get_listener_velocity() const;
+  Vector3f const &get_listener_position() const __attribute__((__const__));
+  Quatf    const &get_listener_rotation() const __attribute__((__const__));
+  Vector3f const &get_listener_velocity() const __attribute__((__const__));
   void set_listener_position(Vector3f const &newposition);
   void set_listener_rotation(Quatf    const &newrotation);
   void set_listener_velocity(Vector3f const &newvelocity);
   void set_listener_position_and_rotation(Vector3f const &newposition, Quatf const &newrotation);
   void update_ears();
-  float get_master_volume() const;
+  float get_master_volume() const __attribute__((__pure__));
   void set_master_volume(float newvolume);
 
   // library
