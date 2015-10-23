@@ -215,8 +215,8 @@ public:
   void set_master_volume(float newvolume);
 
   // library
-  soundeffect *get_effect(unsigned int effect_id) const;
-  music_buffer *get_music(unsigned int music_id) const;
+  soundeffect *get_effect(unsigned int effect_id) const __attribute__((__pure__));
+  music_buffer *get_music(unsigned int music_id)  const __attribute__((__pure__));
   unsigned int load(unsigned char const *buffer, size_t buffersize, float hdr_scale = 1.0);
   unsigned int music_load(unsigned char const *buffer, size_t buffersize);
 

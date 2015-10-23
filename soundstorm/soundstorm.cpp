@@ -640,7 +640,7 @@ long soundstorm::ogg_callback_tell(void *datasource) {
     return 0;                         // nullptr means we've got nothing playing
   }
   deck *thisdeck = reinterpret_cast<deck*>(datasource);
-  return static_cast<long>(thisdeck->playlist.front()->seek);
+  return sizeof(long) == sizeof(ogg_int64_t) ? thisdeck->playlist.front()->seek : static_cast<long>(thisdeck->playlist.front()->seek);    // only cast if we need to
 }
 
 unsigned int soundstorm::get_device_default() const {
