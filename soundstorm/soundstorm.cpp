@@ -1,5 +1,6 @@
 #include "soundstorm.h"
 #include "platform_defines.h"
+#include "cast_if_required.h"
 #ifdef PLATFORM_LINUX
   #include "pa_linux_alsa.h"
 #endif // PLATFORM_LINUX
@@ -548,7 +549,7 @@ size_t soundstorm::ogg_callback_read(void *ptr, size_t size, size_t count, void 
     }
   #endif // DEBUG_SOUNDSTORM
 
-  unsigned int const bytes = static_cast<unsigned int>(size * count);
+  unsigned int const bytes = cast_if_required<unsigned int>(size * count);
   unsigned int i = 0;
   for(; i != bytes; ++i) {
     target[i] = thismusic->buffer->buffer[thismusic->seek];
@@ -640,7 +641,7 @@ long soundstorm::ogg_callback_tell(void *datasource) {
     return 0;                         // nullptr means we've got nothing playing
   }
   deck *thisdeck = reinterpret_cast<deck*>(datasource);
-  return sizeof(long) == sizeof(ogg_int64_t) ? thisdeck->playlist.front()->seek : static_cast<long>(thisdeck->playlist.front()->seek);    // only cast if we need to
+  return cast_if_required<long>(thisdeck->playlist.front()->seek);
 }
 
 unsigned int soundstorm::get_device_default() const {
@@ -901,7 +902,7 @@ unsigned int soundstorm::load(unsigned char const *buffer, size_t buffersize, fl
   #ifdef NSOUND
     return 0;
   #endif // NSOUND
-  unsigned int const effectnum = static_cast<unsigned int>(effect_library.size());
+  unsigned int const effectnum = cast_if_required<unsigned int>(effect_library.size());
   soundeffect *thiseffect = new soundeffect;
   thiseffect->buffer = reinterpret_cast<float const*>(buffer);    // treat the buffer as one of 32bit floats
   thiseffect->buffersize = buffersize / sizeof(float);            // convert to our size in samples
@@ -929,7 +930,7 @@ unsigned int soundstorm::music_load(unsigned char const *buffer, size_t buffersi
   #ifdef NSOUND
     return 0;
   #endif // NSOUND
-  unsigned int const tracknum = static_cast<unsigned int>(music_library.size());
+  unsigned int const tracknum = cast_if_required<unsigned int>(music_library.size());
   music_buffer *thismusic = new music_buffer;
   thismusic->buffer = buffer;
   thismusic->buffersize = buffersize;
