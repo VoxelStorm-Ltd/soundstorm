@@ -1165,5 +1165,7 @@ void soundstorm::music_clear(unsigned int deck_id) {
   while(!decks[deck_id].playlist.empty()) {
     delete decks[deck_id].playlist.front();
     decks[deck_id].playlist.pop();
+    //decks[deck_id].buffer_read_seek = deck_buffer_size;                         // wind it to the end of the current buffer
+    //decks[deck_id].buffer_needs_filled = true;
   }
 }
