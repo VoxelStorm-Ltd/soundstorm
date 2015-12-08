@@ -134,7 +134,7 @@ private:
   static float constexpr head_shadow_delay_max = head_shadow_time - (ear_offset / speed_of_sound);
   // how much the opposite ear is shadowed by the head, realistic ~= 6.4dB, we're going for somewhat of an exaggeration:
   static float constexpr head_shadow_attenuation = 0.9f;
-  static unsigned int constexpr numdecks = 2;         // how many music decks we're currently using
+  unsigned int num_decks = 2;                         // how many music decks we're currently using
   unsigned int deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f); // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
 
   //portaudio::DirectionSpecificStreamParameters *stream_in_params  = nullptr;
@@ -167,7 +167,7 @@ private:
 public:
   bool enabled = false;                               // whether to use the sound system - if disabled, all play functions exit early
 
-  soundstorm();
+  soundstorm(unsigned int number_of_decks = 2);
   ~soundstorm();
 
   void init_device();
@@ -188,12 +188,18 @@ public:
   static int    ogg_callback_close(void *datasource) __attribute__((__const__));
   static long   ogg_callback_tell( void *datasource) __attribute__((__pure__));
 
+  // devices
   unsigned int get_device_default() const;
   unsigned int get_device_current() const;
   void get_device_list(         std::vector<std::pair<unsigned int, std::string>> &target_list) const;
   void get_device_list_out_only(std::vector<std::pair<unsigned int, std::string>> &target_list) const;
   void get_device_list_in_only( std::vector<std::pair<unsigned int, std::string>> &target_list) const;
   void set_device(unsigned int new_device_index);
+
+  // sound system
+  unsigned int get_num_decks() const;
+  void set_num_decks(unsigned int new_num_decks);
+
   // statistics
   double get_cpu_usage() const;
   double get_sample_rate() const;

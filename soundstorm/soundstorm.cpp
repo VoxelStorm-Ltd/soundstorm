@@ -8,8 +8,9 @@
   #include <cassert>
 #endif
 
-soundstorm::soundstorm() try
-  : audio_system_auto(false),             // don't initialise portaudio automatically
+soundstorm::soundstorm(unsigned int number_of_decks) try
+  : audio_system_auto(false),                                                   // don't initialise portaudio automatically
+    num_decks(number_of_decks),                                                 // optional setting of number of decks
     listener_rotation(Quatd::fromEulerAngles(0.0, 0.0, 0.0)) {
   /// Default constructor with integrated try/catch
   // Initialise all global audio setup
@@ -139,7 +140,7 @@ void soundstorm::init_device() {
 void soundstorm::resize_decks() {
   /// Resize the decks to the correct number and buffer size, and reset the buffers
   // decks must be initialised before the mixer starts
-  decks.resize(numdecks);
+  decks.resize(num_decks);
   for(deck &thisdeck : decks) {
     // initialise deck output buffers to zero
     thisdeck.buffer_l[0].resize(deck_buffer_size, 0.0f);
@@ -742,6 +743,27 @@ void soundstorm::set_device(unsigned int new_device_index) {
     }
   }
   std::cout << "SoundStorm: Tried to switch to nonexistent device number " << new_device_index << std::endl;
+}
+
+unsigned int soundstorm::get_num_decks() const {
+  return num_decks;
+}
+void soundstorm::set_num_decks(unsigned int new_num_decks) {
+  /// Change the number of decks
+  if(new_num_decks == num_decks) {
+    return;                                                                     // exit silently if the change is a noop
+  }
+  std::cout << "SoundStorm: Changing number of decks from " << num_decks << " to " << new_num_decks << std::endl;
+  bool const reinitialise_streamer = streamer_run;
+  if(reinitialise_streamer) {                                                   // if the streamer's currently running, shut it down
+    stop_streamer();
+  }
+  shutdown_device();
+  num_decks = new_num_decks;
+  init_device();
+  if(reinitialise_streamer) {                                                   // if the streamer was running at restart, restart it
+    start_streamer();
+  }
 }
 
 double soundstorm::get_cpu_usage() const {
