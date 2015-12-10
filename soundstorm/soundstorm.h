@@ -167,7 +167,8 @@ private:
 public:
   bool enabled = false;                               // whether to use the sound system - if disabled, all play functions exit early
 
-  soundstorm(unsigned int number_of_decks = 2);
+  soundstorm();
+  soundstorm(unsigned int number_of_decks);
   ~soundstorm();
 
   void init_device();
@@ -197,7 +198,7 @@ public:
   void set_device(unsigned int new_device_index);
 
   // sound system
-  unsigned int get_num_decks() const;
+  unsigned int get_num_decks() const __attribute__((__pure__));
   void set_num_decks(unsigned int new_num_decks);
 
   // statistics

@@ -8,11 +8,16 @@
   #include <cassert>
 #endif
 
+soundstorm::soundstorm()
+  : soundstorm(2) {
+  /// Default wrapper constructor
+}
+
 soundstorm::soundstorm(unsigned int number_of_decks) try
   : audio_system_auto(false),                                                   // don't initialise portaudio automatically
     num_decks(number_of_decks),                                                 // optional setting of number of decks
     listener_rotation(Quatd::fromEulerAngles(0.0, 0.0, 0.0)) {
-  /// Default constructor with integrated try/catch
+  /// Specific constructor with integrated try/catch
   // Initialise all global audio setup
   try {
     audio_system_auto.initialize();
