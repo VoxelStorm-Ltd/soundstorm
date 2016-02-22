@@ -1,4 +1,5 @@
 #include "soundstorm.h"
+#include <iostream>
 #include "platform_defines.h"
 #include "cast_if_required.h"
 #ifdef PLATFORM_LINUX
@@ -16,7 +17,7 @@ soundstorm::soundstorm()
 soundstorm::soundstorm(unsigned int number_of_decks) try
   : audio_system_auto(false),                                                   // don't initialise portaudio automatically
     num_decks(number_of_decks),                                                 // optional setting of number of decks
-    listener_rotation(Quatd::fromEulerAngles(0.0, 0.0, 0.0)) {
+    listener_rotation(quatd::fromEulerAngles(0.0, 0.0, 0.0)) {
   /// Specific constructor with integrated try/catch
   // Initialise all global audio setup
   try {
@@ -43,10 +44,10 @@ soundstorm::soundstorm(unsigned int number_of_decks) try
 
   // select an appropriate sound device
   audio_device = &audio_system->defaultOutputDevice();
-  dump_device_info();                     // this also updates num_devices
-  init_device();                          // initialise the currently selected device
+  dump_device_info();                                                           // this also updates num_devices
+  init_device();                                                                // initialise the currently selected device
 
-  set_listener_position_and_rotation(Vector3f(0.0f, 0.0f, 0.0f), Quatf::fromEulerAngles(0.0f, 0.0f, 0.0f));   // initial positions for the ears
+  set_listener_position_and_rotation(vec3f(0.0f, 0.0f, 0.0f), quatf::fromEulerAngles(0.0f, 0.0f, 0.0f));   // initial positions for the ears
 } catch(portaudio::PaException const &e) {
   std::cout << "SoundStorm: PortAudio exception: " << e.paErrorText() << std::endl;
 } catch(portaudio::PaCppException const &e) {
@@ -61,10 +62,10 @@ soundstorm::~soundstorm() {
   /// Default destructor
   dump_session_report();
   stop_streamer();
-  auto playing_backup = playing;                // so we can delete these after
+  auto playing_backup = playing;                                                // so we can delete these after
   playing.clear();
   decks.clear();
-  stream->abort();                              // tell the stream to stop without waiting for the buffers to finish
+  stream->abort();                                                              // tell the stream to stop without waiting for the buffers to finish
   for(auto &it : playing_backup) {
     delete it;
   }
@@ -73,12 +74,12 @@ soundstorm::~soundstorm() {
   }
   effect_library.clear();
   shutdown_device();
-  audio_system->terminate();                    // release audio resources
+  audio_system->terminate();                                                    // release audio resources
 }
 
 void soundstorm::init_device() {
   /// Initialise the currently selected audio device and start the stream
-  ears.resize(2);         // safe default number of ears, in case we exit initialisation early
+  ears.resize(2);                                                               // safe default number of ears, in case we exit initialisation early
   if(num_devices == 0) {
     enabled = false;
     std::cout << "SoundStorm: No audio devices found!  Cancelling initialisation." << std::endl;
@@ -89,7 +90,7 @@ void soundstorm::init_device() {
     channels = audio_device->maxOutputChannels();
   }
   if(channels < 2) {
-    channels = 2;   // but also clamp to a minimum of 2, since the engine assumes stereo separation
+    channels = 2;                                                               // but also clamp to a minimum of 2, since the engine assumes stereo separation
     enabled = false;
     std::cout << "SoundStorm: Fewer than two channels found on selected device!  Cancelling initialisation." << std::endl;
     return;
@@ -100,28 +101,28 @@ void soundstorm::init_device() {
   ears.resize(channels);
 
   if(stream) {
-    shutdown_device();      // make sure we clean up any already open streams
+    shutdown_device();                                                          // make sure we clean up any already open streams
   }
 
   // set up the parameters required to open a (Callback)Stream:
   stream_out_params = new portaudio::DirectionSpecificStreamParameters(
-    *audio_device,                                            // device
-    channels,                                                 // output channels
-    portaudio::FLOAT32,                                       // sample data format http://riot.so/portaudiocpp/a00060.html#a30bc71f065706d41a5d9208ea861e4a6
-    false,                                                    // interleaved
-    audio_device->defaultLowOutputLatency(),                  // latency
-    NULL);                                                    // hostApiSpecificStreamInfo
+    *audio_device,                                                              // device
+    channels,                                                                   // output channels
+    portaudio::FLOAT32,                                                         // sample data format http://riot.so/portaudiocpp/a00060.html#a30bc71f065706d41a5d9208ea861e4a6
+    false,                                                                      // interleaved
+    audio_device->defaultLowOutputLatency(),                                    // latency
+    NULL);                                                                      // hostApiSpecificStreamInfo
   stream_params = new portaudio::StreamParameters(
-    portaudio::DirectionSpecificStreamParameters::null(),     // input stream parameters
-    *stream_out_params,                                       // output stream parameters
-    samplerate,                                               // sample rate
-    frames_per_buffer,                                        // frames per buffer for a CallbackStream, or the preferred buffer granularity for a BlockingStream.
-    paClipOff | paDitherOff);                                 // The flags for the stream, default paNoFlag http://portaudio.com/docs/v19-doxydocs/portaudio_8h.html#ad33384abe3754a39f4773f2561773595
+    portaudio::DirectionSpecificStreamParameters::null(),                       // input stream parameters
+    *stream_out_params,                                                         // output stream parameters
+    samplerate,                                                                 // sample rate
+    frames_per_buffer,                                                          // frames per buffer for a CallbackStream, or the preferred buffer granularity for a BlockingStream.
+    paClipOff | paDitherOff);                                                   // The flags for the stream, default paNoFlag http://portaudio.com/docs/v19-doxydocs/portaudio_8h.html#ad33384abe3754a39f4773f2561773595
 
   stream = new portaudio::MemFunCallbackStream<soundstorm>(
-    *stream_params,                                           // stream parameters
-    *this,                                                    // class instance
-    &soundstorm::mixer);                                      // member function to call
+    *stream_params,                                                             // stream parameters
+    *this,                                                                      // class instance
+    &soundstorm::mixer);                                                        // member function to call
 
   #ifdef PLATFORM_LINUX
     int alsacard;
@@ -137,7 +138,7 @@ void soundstorm::init_device() {
   deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f);              // update buffer size
   resize_decks();                                                               // needs to happen before mixer starts
   #ifndef NSOUND
-    stream->start();                                          // start the stream
+    stream->start();                                                            // start the stream
   #endif // NSOUND
   enabled = true;
   std::cout << "SoundStorm: Initialised." << std::endl;
@@ -152,7 +153,7 @@ void soundstorm::resize_decks() {
     thisdeck.buffer_r[0].resize(deck_buffer_size, 0.0f);
     thisdeck.buffer_l[1].resize(deck_buffer_size, 0.0f);
     thisdeck.buffer_r[1].resize(deck_buffer_size, 0.0f);
-    //thisdeck.buffer_read = 1;             // so that buffer 0 will be pre-filled
+    //thisdeck.buffer_read = 1;                                                   // so that buffer 0 will be pre-filled
     thisdeck.buffer_read = 0;
     thisdeck.buffer_needs_filled = true;
   }
@@ -179,12 +180,12 @@ void soundstorm::restart_device() {
   /// Shut down and reinitialise the stream with the currently selected device - needed after device change
   std::cout << "SoundStorm: Restarting device..." << std::endl;
   bool const reinitialise_streamer = streamer_run;
-  if(reinitialise_streamer) {           // if the streamer's currently running, shut it down
+  if(reinitialise_streamer) {                                                   // if the streamer's currently running, shut it down
     stop_streamer();
   }
   shutdown_device();
   init_device();
-  if(reinitialise_streamer) {           // if the streamer was running at restart, restart it
+  if(reinitialise_streamer) {                                                   // if the streamer was running at restart, restart it
     start_streamer();
   }
 }
@@ -199,7 +200,7 @@ void soundstorm::start_streamer() {
   //streamer_run = false;
   //streamer();
   //for(deck &thisdeck : decks) {
-  //  thisdeck.buffer_read = 0;             // so the pre-filled buffer will be played first
+  //  thisdeck.buffer_read = 0;                                                   // so the pre-filled buffer will be played first
   //}
   streamer_run = true;
 
@@ -213,13 +214,13 @@ void soundstorm::stop_streamer() {
   /// Stop the streamer thread if it's running
   if(streamer_thread) {
     std::cout << "SoundStorm: Stopping streamer thread..." << std::endl;
-    streamer_run = false;                         // tell the streamer not to run another cycle
+    streamer_run = false;                                                       // tell the streamer not to run another cycle
     // available with boost::thread only, not std::thread:
-    //streamer_thread->interrupt();                 // and send an interrupt signal for quicker cleanup
+    //streamer_thread->interrupt();                                               // and send an interrupt signal for quicker cleanup
     if(streamer_thread->joinable()) {
       try {
-        streamer_thread->join();                  // wait for the streamer thread to finish
-      } catch(...) {                              // ignore exceptions
+        streamer_thread->join();                                                // wait for the streamer thread to finish
+      } catch(...) {                                                            // ignore exceptions
       }
     }
     delete streamer_thread;
@@ -241,16 +242,16 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
   #endif
 
   // check and slide the HDR window
-  //hdr_window_top    -= hdr_dropback_rate;       // first droop by the default amount
+  //hdr_window_top    -= hdr_dropback_rate;                                       // first droop by the default amount
   //hdr_window_bottom -= hdr_dropback_rate;
-  hdr_window_top    *= hdr_dropback_rate;       // first droop by the default amount
+  hdr_window_top    *= hdr_dropback_rate;                                       // first droop by the default amount
   hdr_window_bottom *= hdr_dropback_rate;
 
   #ifdef SOUNDSTORM_NO_SSE
-    if(hdr_window_top < hdr_window_top_min) {   // clamp
+    if(hdr_window_top < hdr_window_top_min) {                                   // clamp
       hdr_window_top = hdr_window_top_min;
     }
-    if(hdr_window_bottom < 0.0f) {              // clamp
+    if(hdr_window_bottom < 0.0f) {                                              // clamp
       hdr_window_bottom = 0.0f;
     }
   #else
@@ -260,10 +261,10 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
 
   float **out = static_cast<float**>(buffer_out);
   for(unsigned int i = 0; i != frames; ++i) {
-    for(unsigned int channel = 0; channel != channels; ++channel) {   // clear all channels
+    for(unsigned int channel = 0; channel != channels; ++channel) {             // clear all channels
       out[channel][i] = 0.0;
     }
-    float max_level __attribute__((__aligned__(16))) = 0.0;           // keep track of the maximum output level this frame
+    float max_level __attribute__((__aligned__(16))) = 0.0;                     // keep track of the maximum output level this frame
 
     // play the sound effects
     for(auto it = playing.begin(); it != playing.end();) {
@@ -282,7 +283,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       #endif // DEBUG_SOUNDSTORM
       float const seek_delay = distance / speed_of_sound;
       #ifdef DEBUG_SOUNDSTORM
-        //std::cout << "DEBUG: " << playing.size() << " pos " << Vector3i(thissound.position) << " dist " << distance << " ch" << thissound.channel << " delay " << seek_delay << "s" << std::endl;
+        //std::cout << "DEBUG: " << playing.size() << " pos " << vec3i(thissound.position) << " dist " << distance << " ch" << thissound.channel << " delay " << seek_delay << "s" << std::endl;
       #endif // DEBUG_SOUNDSTORM
       float const angle_ratio = std::acos(thisear.orientation.dotProduct(thissound.position - thisear.position) / distance) / static_cast<float>(M_PI);
       float const head_shadow_delay = head_shadow_delay_max * angle_ratio;
@@ -294,10 +295,10 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
           if(thissound.next_sound) {
             if(thissound.next_sound == &thissound) {
               // this is a one-sound loop, so just rewind to the beginning
-              thissound.seek = -thissound.seek_speed;         // rewind one step make sure the first sample is really 0
-              apparent_seek = thissound.seek - seek_delay;    // rewind to account for time delay
+              thissound.seek = -thissound.seek_speed;                           // rewind one step make sure the first sample is really 0
+              apparent_seek = thissound.seek - seek_delay;                      // rewind to account for time delay
               #ifdef SOUNDSTORM_NO_SSE
-                if(apparent_seek < 0.0f) {  // avoid trying to play before the start of the effect
+                if(apparent_seek < 0.0f) {                                      // avoid trying to play before the start of the effect
                   apparent_seek = 0.0f;
                 }
               #else
@@ -314,7 +315,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
               std::cout << "SoundStorm: DEBUG: finished playing sound at seek point " << apparent_seek << " after " << apparent_seek / samplerate << "s" << std::endl;
             #endif // DEBUG_SOUNDSTORM
             it = playing.erase(it);
-            continue;                               // we have nothing to contribute to the stream
+            continue;                                                           // we have nothing to contribute to the stream
           }
         }
         // directional attenuation
@@ -341,7 +342,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
         #endif // SOUNDSTORM_NO_SSE
       }
       thissound.seek += thissound.seek_speed;
-      ++it;                                         // only increment here in case we erase instead
+      ++it;                                                                     // only increment here in case we erase instead
     }
 
     // play the music
@@ -365,10 +366,10 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       out[channel_type::LEFT ][i] += thisdeck.buffer_l[thisdeck.buffer_read][thisdeck.buffer_read_seek] * thisdeck.volume;
       out[channel_type::RIGHT][i] += thisdeck.buffer_r[thisdeck.buffer_read][thisdeck.buffer_read_seek] * thisdeck.volume;
       ++thisdeck.buffer_read_seek;
-      if(thisdeck.buffer_read_seek == deck_buffer_size) {           // we've reached the end of this buffer
-        thisdeck.buffer_read = 1 - thisdeck.buffer_read;            // flip the ping-pongs
-        thisdeck.buffer_needs_filled = true;                        // flag it as needing refilled
-        thisdeck.buffer_read_seek = 0;                              // rewind
+      if(thisdeck.buffer_read_seek == deck_buffer_size) {                       // we've reached the end of this buffer
+        thisdeck.buffer_read = 1 - thisdeck.buffer_read;                        // flip the ping-pongs
+        thisdeck.buffer_needs_filled = true;                                    // flag it as needing refilled
+        thisdeck.buffer_read_seek = 0;                                          // rewind
         #ifdef DEBUG_SOUNDSTORM
           //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer flipped to " << thisdeck.buffer_read << std::endl;
         #endif // DEBUG_SOUNDSTORM
@@ -376,10 +377,10 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
     }
 
     // scale the HDR windows for this frame
-    #if defined(SOUNDSTORM_NO_SSE) || defined(DEBUG_SOUNDSTORM)     // skip using branchless intrins if we need debugging output
+    #if defined(SOUNDSTORM_NO_SSE) || defined(DEBUG_SOUNDSTORM)                 // skip using branchless intrins if we need debugging output
       if(hdr_window_top < max_level) {
         hdr_window_top = max_level;
-        //hdr_window_bottom = std::min(0.0f, hdr_window_top - max_level);   // slide up the bottom of the window to match
+        //hdr_window_bottom = std::min(0.0f, hdr_window_top - max_level);         // slide up the bottom of the window to match
         #ifdef DEBUG_SOUNDSTORM
           std::cout << "SoundStorm: DEBUG: HDR window raised to " << hdr_window_bottom << " - " << hdr_window_top << std::endl;
           if(hdr_window_top > session_max_hdr_window_top) {
@@ -395,8 +396,8 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
     #else
       _mm_store_ss(&hdr_window_top, _mm_max_ss(_mm_set_ss(hdr_window_top), _mm_set_ss(max_level)));  // SSE intrinsicts: branchless max
     #endif // SOUNDSTORM_NO_SSE || DEBUG_SOUNDSTORM
-    float const final_scale = volume_master / hdr_window_top;         // final global volume control and HDR window scaling
-    for(unsigned int channel = 0; channel != channels; ++channel) {   // scale all channels
+    float const final_scale = volume_master / hdr_window_top;                   // final global volume control and HDR window scaling
+    for(unsigned int channel = 0; channel != channels; ++channel) {             // scale all channels
       out[channel][i] *= final_scale;
     }
   }
@@ -410,16 +411,16 @@ void soundstorm::streamer() {
   #endif // DEBUG_SOUNDSTORM
   ov_callbacks callbacks;
   callbacks.read_func  = &soundstorm::ogg_callback_read;
-  //callbacks.seek_func  = &soundstorm::ogg_callback_seek;          // can be NULL to treat as non-seekable
+  //callbacks.seek_func  = &soundstorm::ogg_callback_seek;                      // can be NULL to treat as non-seekable
   callbacks.seek_func  = NULL;
-  //callbacks.close_func = &soundstorm::ogg_callback_close;         // or can just be NULL for no close
+  //callbacks.close_func = &soundstorm::ogg_callback_close;                     // or can just be NULL for no close
   callbacks.close_func = NULL;
-  //callbacks.tell_func  = &soundstorm::ogg_callback_tell;          // can be NULL to treat as non-seekable
+  //callbacks.tell_func  = &soundstorm::ogg_callback_tell;                      // can be NULL to treat as non-seekable
   callbacks.tell_func  = NULL;
 
   do {
     for(auto &thisdeck : decks) {
-      if(!thisdeck.oggfile) {                                       // initialise the per-deck ogg decoders
+      if(!thisdeck.oggfile) {                                                   // initialise the per-deck ogg decoders
         if(thisdeck.playlist.empty()) {
           #ifdef DEBUG_SOUNDSTORM
             std::cout << "SoundStorm: WARNING: deck " << &thisdeck << " given empty playlist" << std::endl;
@@ -464,30 +465,30 @@ void soundstorm::streamer() {
         #endif // DEBUG_SOUNDSTORM
       }
       if(thisdeck.buffer_needs_filled) {
-        thisdeck.buffer_needs_filled = false;                           // reset the flag first
+        thisdeck.buffer_needs_filled = false;                                   // reset the flag first
         unsigned int const buffer_write = 1 - thisdeck.buffer_read;
         #ifdef DEBUG_SOUNDSTORM
           //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer " << buffer_write << " refilling..." << std::endl;
         #endif // DEBUG_SOUNDSTORM
         for(unsigned int i = 0; i != deck_buffer_size;) {
-          int current_section;        // what the hell is this even used for?
+          int current_section;                                                  // what the hell is this even used for?
           float **pcm_channels;
           int samples_read;
           do {
             samples_read = static_cast<int>(ov_read_float(thisdeck.oggfile, &pcm_channels, deck_buffer_size - i, &current_section));
             switch(samples_read) {
-            case 0:               // EOF
+            case 0:                                                             // EOF
               //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill got EOF " << samples_read << std::endl;
               break;
-            case OV_HOLE:         // indicates there was an interruption in the data. (one of: garbage between pages, loss of sync followed by recapture, or a corrupt page)
+            case OV_HOLE:                                                       // indicates there was an interruption in the data. (one of: garbage between pages, loss of sync followed by recapture, or a corrupt page)
               #ifdef DEBUG_SOUNDSTORM
                 //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_HOLE " << samples_read << std::endl;
               #endif // DEBUG_SOUNDSTORM
-              break;              // this is normal when switching tracks
-            case OV_EBADLINK:     // indicates that an invalid stream section was supplied to libvorbisfile, or the requested link is corrupt.
+              break;                                                            // this is normal when switching tracks
+            case OV_EBADLINK:                                                   // indicates that an invalid stream section was supplied to libvorbisfile, or the requested link is corrupt.
               std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EBADLINK " << samples_read << std::endl;
               break;
-            case OV_EINVAL:       // indicates the initial file headers couldn't be read or are corrupt, or that the initial open call for vf failed.
+            case OV_EINVAL:                                                     // indicates the initial file headers couldn't be read or are corrupt, or that the initial open call for vf failed.
               std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EINVAL " << samples_read << std::endl;
               break;
             }
@@ -510,7 +511,7 @@ void soundstorm::streamer() {
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<unsigned int>(1000.0f * static_cast<float>(deck_buffer_size) / samplerate * 0.5f * buffer_fill_sleep)));
   } while(streamer_run);
 
-  for(auto &thisdeck : decks) {     // cleanup
+  for(auto &thisdeck : decks) {                                                 // cleanup
     ov_clear(thisdeck.oggfile);
     delete thisdeck.oggfile;
     thisdeck.oggfile = nullptr;
@@ -529,7 +530,7 @@ size_t soundstorm::ogg_callback_read(void *ptr, size_t size, size_t count, void 
     #ifdef DEBUG_SOUNDSTORM
       std::cout << "SoundStorm: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
     #endif // DEBUG_SOUNDSTORM
-    return 0;                         // nullptr means we've got nothing playing
+    return 0;                                                                   // nullptr means we've got nothing playing
   }
   deck *thisdeck = reinterpret_cast<deck*>(datasource);
   #ifdef DEBUG_SOUNDSTORM
@@ -566,7 +567,7 @@ size_t soundstorm::ogg_callback_read(void *ptr, size_t size, size_t count, void 
       #ifdef DEBUG_SOUNDSTORM
         std::cout << "SoundStorm: DEBUG: advancing playlist after " << thismusic->seek / 1024 << "KB played" << std::endl;
       #endif // DEBUG_SOUNDSTORM
-      thismusic->seek = 0;                                          // rewind so that we advance to 0 this frame
+      thismusic->seek = 0;                                                      // rewind so that we advance to 0 this frame
       if(thisdeck->playlist.size() == 1) {
         // no track queued after this
         if(!thisdeck->repeat) {
@@ -587,8 +588,8 @@ size_t soundstorm::ogg_callback_read(void *ptr, size_t size, size_t count, void 
           std::cout << "SoundStorm: DEBUG: streamer replacing music with top of playlist" << std::endl;
         #endif // DEBUG_SOUNDSTORM
         delete thismusic;
-        thisdeck->playlist.pop();                                     // take the current entry off the playlist
-        thismusic = thisdeck->playlist.front();                       // tell the track to replace itself
+        thisdeck->playlist.pop();                                               // take the current entry off the playlist
+        thismusic = thisdeck->playlist.front();                                 // tell the track to replace itself
       }
     }
     // NOTE: could probably improve this using a block memcpy or std::copy
@@ -605,7 +606,7 @@ int soundstorm::ogg_callback_seek(void *datasource, ogg_int64_t offset, int orig
     #ifdef DEBUG_SOUNDSTORM
       std::cout << "SoundStorm: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
     #endif // DEBUG_SOUNDSTORM
-    return 0;                         // nullptr means we've got nothing playing
+    return 0;                                                                   // nullptr means we've got nothing playing
   }
   deck *thisdeck = reinterpret_cast<deck*>(datasource);
   music *thismusic = thisdeck->playlist.front();
@@ -644,7 +645,7 @@ long soundstorm::ogg_callback_tell(void *datasource) {
     #ifdef DEBUG_SOUNDSTORM
       std::cout << "SoundStorm: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
     #endif // DEBUG_SOUNDSTORM
-    return 0;                         // nullptr means we've got nothing playing
+    return 0;                                                                   // nullptr means we've got nothing playing
   }
   deck *thisdeck = reinterpret_cast<deck*>(datasource);
   return cast_if_required<long>(thisdeck->playlist.front()->seek);
@@ -803,7 +804,7 @@ void soundstorm::dump_device_info() {
   num_devices = 0;
   for(auto const &it : boost::make_iterator_range(audio_system->devicesBegin(), audio_system->devicesEnd())) {
     ++num_devices;
-    if(&it == audio_device) {         // mark the currently selected device
+    if(&it == audio_device) {                                                   // mark the currently selected device
       std::cout << " *";
     } else {
       std::cout << "  ";
@@ -836,35 +837,35 @@ void soundstorm::dump_device_info() {
   }
 }
 
-Vector3f const &soundstorm::get_listener_position() const {
+vec3f const &soundstorm::get_listener_position() const {
   /// Return the current listener world position
   return listener_position;
 }
-Quatf const &soundstorm::get_listener_rotation() const {
+quatf const &soundstorm::get_listener_rotation() const {
   /// Return the current listener rotation
   return listener_rotation;
 }
-Vector3f const &soundstorm::get_listener_velocity() const {
+vec3f const &soundstorm::get_listener_velocity() const {
   /// Return the current listener world position
   return listener_velocity;
 }
 
-void soundstorm::set_listener_position(Vector3f const &newposition) {
+void soundstorm::set_listener_position(vec3f const &newposition) {
   /// Update the world position of the listener - also updates the velocity
   listener_velocity = newposition - listener_position;
   listener_position = newposition;
   update_ears();
 }
-void soundstorm::set_listener_rotation(Quatf const &newrotation) {
+void soundstorm::set_listener_rotation(quatf const &newrotation) {
   /// Update the facing direction of the listener
   listener_rotation = newrotation;
   update_ears();
 }
-void soundstorm::set_listener_velocity(Vector3f const &newvelocity) {
+void soundstorm::set_listener_velocity(vec3f const &newvelocity) {
   /// Update the velocity of the listener through the medium
   listener_velocity = newvelocity;
 }
-void soundstorm::set_listener_position_and_rotation(Vector3f const &newposition, Quatf const &newrotation) {
+void soundstorm::set_listener_position_and_rotation(vec3f const &newposition, quatf const &newrotation) {
   /// Update both position and orientation in a single call
   listener_velocity = newposition - listener_position;
   listener_position = newposition;
@@ -931,8 +932,8 @@ unsigned int soundstorm::load(unsigned char const *buffer, size_t buffersize, fl
   #endif // NSOUND
   unsigned int const effectnum = cast_if_required<unsigned int>(effect_library.size());
   soundeffect *thiseffect = new soundeffect;
-  thiseffect->buffer = reinterpret_cast<float const*>(buffer);    // treat the buffer as one of 32bit floats
-  thiseffect->buffersize = buffersize / sizeof(float);            // convert to our size in samples
+  thiseffect->buffer = reinterpret_cast<float const*>(buffer);                  // treat the buffer as one of 32bit floats
+  thiseffect->buffersize = buffersize / sizeof(float);                          // convert to our size in samples
   thiseffect->hdr_scale = hdr_scale;
   effect_library.emplace_back(thiseffect);
   #ifdef DEBUG_SOUNDSTORM
@@ -969,8 +970,8 @@ unsigned int soundstorm::music_load(unsigned char const *buffer, size_t buffersi
 }
 
 void soundstorm::play(unsigned int effect_id,
-                      Vector3f const &position,
-                      Vector3f const &velocity,
+                      vec3f const &position,
+                      vec3f const &velocity,
                       float volume,
                       float seek_start,
                       float seek_end,
@@ -980,8 +981,8 @@ void soundstorm::play(unsigned int effect_id,
   play(position, velocity, get_effect(effect_id), volume, seek_start, seek_end, seek_speed, thissoundgroup);
 }
 
-void soundstorm::play(Vector3f const &position,
-                      Vector3f const &velocity,
+void soundstorm::play(vec3f const &position,
+                      vec3f const &velocity,
                       soundeffect *effect,
                       float volume,
                       float seek_start,
@@ -997,7 +998,7 @@ void soundstorm::play(Vector3f const &position,
   }
   // parameters reordered to avoid call ambiguity
   #ifndef NDEBUG
-    if(!effect) {   // null check only in debug mode
+    if(!effect) {                                                               // null check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with null effect!" << std::endl;
       return;
     }
@@ -1015,8 +1016,8 @@ void soundstorm::play(Vector3f const &position,
 }
 
 void soundstorm::play_loop(unsigned int effect_id,
-                           Vector3f const &position,
-                           Vector3f const &velocity,
+                           vec3f const &position,
+                           vec3f const &velocity,
                            float volume,
                            float seek_start,
                            float seek_end,
@@ -1026,8 +1027,8 @@ void soundstorm::play_loop(unsigned int effect_id,
   return play_loop(position, velocity, get_effect(effect_id), volume, seek_start, seek_end, seek_speed, thissoundgroup);
 }
 
-void soundstorm::play_loop(Vector3f const &position,
-                           Vector3f const &velocity,
+void soundstorm::play_loop(vec3f const &position,
+                           vec3f const &velocity,
                            soundeffect *effect,
                            float volume,
                            float seek_start,
@@ -1043,7 +1044,7 @@ void soundstorm::play_loop(Vector3f const &position,
     return;
   }
   #ifndef NDEBUG
-    if(!effect) {   // null check only in debug mode
+    if(!effect) {                                                               // null check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with null effect!" << std::endl;
       return;
     }
@@ -1075,7 +1076,7 @@ soundstorm::music *soundstorm::music_queue(unsigned int deck_id, unsigned int mu
     return nullptr;
   }
   #ifndef NDEBUG
-    if(deck_id >= decks.size()) {   // safety check only in debug mode
+    if(deck_id >= decks.size()) {                                               // safety check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with deck_id " << deck_id << " exceeding available decks!" << std::endl;
       return nullptr;
     }
@@ -1091,7 +1092,7 @@ soundstorm::music *soundstorm::music_queue(unsigned int deck_id, unsigned int mu
 void soundstorm::set_music_volume(unsigned int deck_id, float newvolume) {
   /// Instantly apply a new volume level to the specified deck
   #ifndef NDEBUG
-    if(deck_id >= decks.size()) {   // safety check only in debug mode
+    if(deck_id >= decks.size()) {                                               // safety check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with deck_id " << deck_id << " exceeding available decks!" << std::endl;
       return;
     }
@@ -1104,7 +1105,7 @@ void soundstorm::set_music_volume(unsigned int deck_id, float newvolume) {
 void soundstorm::fade_music_volume(unsigned int deck_id, float newvolume, float seconds_to_take) {
   /// Slowly fade volume from current setting to new setting, over a given number of seconds
   #ifndef NDEBUG
-    if(deck_id >= decks.size()) {   // safety check only in debug mode
+    if(deck_id >= decks.size()) {                                               // safety check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with deck_id " << deck_id << " exceeding available decks!" << std::endl;
       return;
     }
@@ -1123,14 +1124,14 @@ void soundstorm::crossfade_music(float seconds_to_take, unsigned int deck_from, 
 
 void soundstorm::stop(soundgroup const &thissoundgroup) {
   /// Make this sound stop immediately
-  for(auto const &thissound : thissoundgroup) {                                       // do this for each channel
+  for(auto const &thissound : thissoundgroup) {                                 // do this for each channel
     thissound->seek = static_cast<float>(thissound->effect->buffersize);
   }
 }
 
 void soundstorm::stop_loop(soundgroup const &thissoundgroup) {
   /// Tell this sound not to loop or continue to the next sound
-  for(auto const &thissound : thissoundgroup) {                                       // do this for each channel
+  for(auto const &thissound : thissoundgroup) {                                 // do this for each channel
     thissound->next_sound = nullptr;
   }
 }
@@ -1143,7 +1144,7 @@ void soundstorm::replace(soundgroup const &thissoundgroup, soundeffect *neweffec
       return;
     }
   #endif // NDEBUG
-  for(auto const &thissound : thissoundgroup) {                                       // do this for each channel
+  for(auto const &thissound : thissoundgroup) {                                 // do this for each channel
     thissound->effect = neweffect;
     thissound->seek = seek_start;
     thissound->seek_end = seek_end;
@@ -1154,7 +1155,7 @@ void soundstorm::replace(soundgroup const &thissoundgroup, soundeffect *neweffec
 void soundstorm::follow(soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start, float seek_end, float seek_speed) {
   /// Append another sound to play immediately once this one completes, with the specified parameters
   /// (or specify nullptr to cancel a following sound)
-  for(auto const &thissound : thissoundgroup) {                                       // do this for each channel
+  for(auto const &thissound : thissoundgroup) {                                 // do this for each channel
     sound *newsound = new sound(neweffect, thissound->position, thissound->velocity, thissound->volume, seek_start, seek_end, seek_speed, nullptr, thissound->channel);
     thissound->next_sound = newsound;
   }
@@ -1167,7 +1168,7 @@ void soundstorm::set_volume(soundgroup const &thissoundgroup, float newvolume) {
   }
 }
 
-void soundstorm::set_position(soundgroup const &thissoundgroup, Vector3f const &newposition) {
+void soundstorm::set_position(soundgroup const &thissoundgroup, vec3f const &newposition) {
   /// Adjust the position of this sound
   for(auto const &thissound : thissoundgroup) {
     thissound->position = newposition;
