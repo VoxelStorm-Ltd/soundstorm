@@ -271,7 +271,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       sound &thissound = **it;
       // stereo positioning
       ear const &thisear = ears[thissound.channel];
-      float const distance_sq = (thisear.position - thissound.position).lengthSq();
+      float const distance_sq = (thisear.position - thissound.position).length_sq();
       float const distance = std::sqrt(distance_sq);
       #ifdef DEBUG_SOUNDSTORM
         if(distance < session_min_distance) {
