@@ -17,7 +17,7 @@ soundstorm::soundstorm()
 soundstorm::soundstorm(unsigned int number_of_decks) try
   : audio_system_auto(false),                                                   // don't initialise portaudio automatically
     num_decks(number_of_decks),                                                 // optional setting of number of decks
-    listener_rotation(quatd::fromEulerAngles(0.0, 0.0, 0.0)) {
+    listener_rotation(quatd::from_euler_angles(0.0, 0.0, 0.0)) {
   /// Specific constructor with integrated try/catch
   // Initialise all global audio setup
   try {
@@ -47,7 +47,7 @@ soundstorm::soundstorm(unsigned int number_of_decks) try
   dump_device_info();                                                           // this also updates num_devices
   init_device();                                                                // initialise the currently selected device
 
-  set_listener_position_and_rotation(vec3f(0.0f, 0.0f, 0.0f), quatf::fromEulerAngles(0.0f, 0.0f, 0.0f));   // initial positions for the ears
+  set_listener_position_and_rotation(vec3f(0.0f, 0.0f, 0.0f), quatf::from_euler_angles(0.0f, 0.0f, 0.0f));   // initial positions for the ears
 } catch(portaudio::PaException const &e) {
   std::cout << "SoundStorm: PortAudio exception: " << e.paErrorText() << std::endl;
 } catch(portaudio::PaCppException const &e) {
