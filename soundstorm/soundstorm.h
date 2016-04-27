@@ -169,7 +169,7 @@ public:
   bool enabled = false;                                                         // whether to use the sound system - if disabled, all play functions exit early
 
   soundstorm();
-  soundstorm(unsigned int number_of_decks);
+  explicit soundstorm(unsigned int number_of_decks);
   ~soundstorm();
 
   void init_device();
