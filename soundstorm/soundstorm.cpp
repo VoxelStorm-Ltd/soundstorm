@@ -1063,7 +1063,7 @@ void soundstorm::play_loop(vec3f const &position,
   }
   if(nullsoundgroup) {
     delete thissoundgroup;
-    thissoundgroup = nullptr;
+    //thissoundgroup = nullptr;
   }
 }
 
