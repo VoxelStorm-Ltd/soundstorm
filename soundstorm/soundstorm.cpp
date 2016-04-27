@@ -72,6 +72,9 @@ soundstorm::~soundstorm() {
   for(auto &it : effect_library) {
     delete it;
   }
+  for(auto &it : music_library) {
+    delete it;
+  }
   effect_library.clear();
   shutdown_device();
   audio_system->terminate();                                                    // release audio resources
