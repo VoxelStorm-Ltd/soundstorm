@@ -115,7 +115,7 @@ private:
   float hdr_window_top_min __attribute__((__aligned__(16))) = 1.0f;             // the high dynamic range window's upper limit can't fall below this
   float hdr_window_top     __attribute__((__aligned__(16))) = hdr_window_top_min; // the high dynamic range window's upper limit, may exceed 1
   float hdr_window_bottom  __attribute__((__aligned__(16))) = 0.0f;             // minimum hdr_scale for sounds to get played
-  //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer;   // amount subtracted per buffer fill
+  //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer; // amount subtracted per buffer fill
   float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995f;           // scaling multiplier per buffer fill
 
   std::thread *streamer_thread = nullptr;                                       // thread for the streaming decoder

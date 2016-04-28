@@ -47,7 +47,7 @@ soundstorm::soundstorm(unsigned int number_of_decks) try
   dump_device_info();                                                           // this also updates num_devices
   init_device();                                                                // initialise the currently selected device
 
-  set_listener_position_and_rotation(vec3f(0.0f, 0.0f, 0.0f), quatf::from_euler_angles(0.0f, 0.0f, 0.0f));   // initial positions for the ears
+  set_listener_position_and_rotation(vec3f(0.0f, 0.0f, 0.0f), quatf::from_euler_angles(0.0f, 0.0f, 0.0f)); // initial positions for the ears
 } catch(portaudio::PaException const &e) {
   std::cout << "SoundStorm: PortAudio exception: " << e.paErrorText() << std::endl;
 } catch(portaudio::PaCppException const &e) {
@@ -156,7 +156,7 @@ void soundstorm::resize_decks() {
     thisdeck.buffer_r[0].resize(deck_buffer_size, 0.0f);
     thisdeck.buffer_l[1].resize(deck_buffer_size, 0.0f);
     thisdeck.buffer_r[1].resize(deck_buffer_size, 0.0f);
-    //thisdeck.buffer_read = 1;                                                   // so that buffer 0 will be pre-filled
+    //thisdeck.buffer_read = 1;                                                 // so that buffer 0 will be pre-filled
     thisdeck.buffer_read = 0;
     thisdeck.buffer_needs_filled = true;
   }
@@ -219,7 +219,7 @@ void soundstorm::stop_streamer() {
     std::cout << "SoundStorm: Stopping streamer thread..." << std::endl;
     streamer_run = false;                                                       // tell the streamer not to run another cycle
     // available with boost::thread only, not std::thread:
-    //streamer_thread->interrupt();                                               // and send an interrupt signal for quicker cleanup
+    //streamer_thread->interrupt();                                             // and send an interrupt signal for quicker cleanup
     if(streamer_thread->joinable()) {
       try {
         streamer_thread->join();                                                // wait for the streamer thread to finish
@@ -245,7 +245,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
   #endif
 
   // check and slide the HDR window
-  //hdr_window_top    -= hdr_dropback_rate;                                       // first droop by the default amount
+  //hdr_window_top    -= hdr_dropback_rate;                                     // first droop by the default amount
   //hdr_window_bottom -= hdr_dropback_rate;
   hdr_window_top    *= hdr_dropback_rate;                                       // first droop by the default amount
   hdr_window_bottom *= hdr_dropback_rate;
@@ -258,8 +258,8 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       hdr_window_bottom = 0.0f;
     }
   #else
-    _mm_store_ss(&hdr_window_top,    _mm_max_ss(_mm_set_ss(hdr_window_top),    _mm_set_ss(hdr_window_top_min)));  // SSE intrinsicts: branchless max
-    _mm_store_ss(&hdr_window_bottom, _mm_max_ss(_mm_set_ss(hdr_window_bottom), _mm_set_ss(0.0f)));                // SSE intrinsicts: branchless max
+    _mm_store_ss(&hdr_window_top,    _mm_max_ss(_mm_set_ss(hdr_window_top),    _mm_set_ss(hdr_window_top_min))); // SSE intrinsicts: branchless max
+    _mm_store_ss(&hdr_window_bottom, _mm_max_ss(_mm_set_ss(hdr_window_bottom), _mm_set_ss(0.0f))); // SSE intrinsicts: branchless max
   #endif // SOUNDSTORM_NO_SSE
 
   float **out = static_cast<float**>(buffer_out);
@@ -290,8 +290,8 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       #endif // DEBUG_SOUNDSTORM
       float const angle_ratio = std::acos(thisear.orientation.dotProduct(thissound.position - thisear.position) / distance) / static_cast<float>(M_PI);
       float const head_shadow_delay = head_shadow_delay_max * angle_ratio;
-      float apparent_seek __attribute__((__aligned__(16))) = thissound.seek - ((seek_delay + head_shadow_delay) * samplerate);    // rewind to account for time delays
-      if(apparent_seek >= 0.0f) {                            // avoid trying to play before the start of the effect
+      float apparent_seek __attribute__((__aligned__(16))) = thissound.seek - ((seek_delay + head_shadow_delay) * samplerate); // rewind to account for time delays
+      if(apparent_seek >= 0.0f) {                                               // avoid trying to play before the start of the effect
         if(apparent_seek >= thissound.effect->buffersize ||
            (thissound.seek_end != 0.0f && apparent_seek >= thissound.seek_end)) {
           // we've reached the end of this effect or our own seek limit
@@ -305,7 +305,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
                   apparent_seek = 0.0f;
                 }
               #else
-                _mm_store_ss(&apparent_seek, _mm_max_ss(_mm_set_ss(apparent_seek), _mm_set_ss(0.0f)));  // SSE intrinsicts: branchless max
+                _mm_store_ss(&apparent_seek, _mm_max_ss(_mm_set_ss(apparent_seek), _mm_set_ss(0.0f))); // SSE intrinsicts: branchless max
               #endif // SOUNDSTORM_NO_SSE
             } else {
               // we have something else queued up, so replace us with it and destroy the original
@@ -333,15 +333,15 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
         out[thissound.channel][i] += sample;
         #ifdef SOUNDSTORM_NO_SSE
           float const absolute_level = std::abs(out[thissound.channel][i]);
-          if(max_level < absolute_level) { // keep track of the maximum output level this frame
+          if(max_level < absolute_level) {                                      // keep track of the maximum output level this frame
             max_level = absolute_level;
           }
         #else
-          //_mm_store_ss(&max_level, _mm_max_ss(_mm_set_ss(max_level), _mm_set_ss(std::abs(out[thissound.channel][i]))));  // SSE intrinsicts: branchless max
+          //_mm_store_ss(&max_level, _mm_max_ss(_mm_set_ss(max_level), _mm_set_ss(std::abs(out[thissound.channel][i])))); // SSE intrinsicts: branchless max
           // SSE abs() implementation hack, see http://fastcpp.blogspot.co.uk/2011/03/changing-sign-of-float-values-using-sse.html
-          static __m128 const signmask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000));                  // SSE intrinsic bitmask for float sign
+          static __m128 const signmask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000)); // SSE intrinsic bitmask for float sign
           __m128 const absolute_level = _mm_andnot_ps(signmask, _mm_set_ss(out[thissound.channel][i])); // SSE intrinsics: and not
-          _mm_store_ss(&max_level, _mm_max_ss(_mm_set_ss(max_level), absolute_level));                  // SSE intrinsicts: branchless max
+          _mm_store_ss(&max_level, _mm_max_ss(_mm_set_ss(max_level), absolute_level)); // SSE intrinsicts: branchless max
         #endif // SOUNDSTORM_NO_SSE
       }
       thissound.seek += thissound.seek_speed;
@@ -354,16 +354,16 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       #ifdef SOUNDSTORM_NO_SSE
         thisdeck.volume += std::min(std::max(thisdeck.volume_target - thisdeck.volume, thisdeck.volume_fadespeed), -thisdeck.volume_fadespeed);
       #else
-        static __m128 const signmask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000));                        // SSE intrinsic bitmask for float sign
-        //__m128 volume_shift = _mm_sub_ss(_mm_set_ss(thisdeck.volume_target), _mm_set_ss(thisdeck.volume));  // SSE intrinsics: subtract
+        static __m128 const signmask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000)); // SSE intrinsic bitmask for float sign
+        //__m128 volume_shift = _mm_sub_ss(_mm_set_ss(thisdeck.volume_target), _mm_set_ss(thisdeck.volume)); // SSE intrinsics: subtract
         __m128 const volume_target = _mm_set_ss(thisdeck.volume_target);
         __m128 const volume        = _mm_set_ss(thisdeck.volume);
-        __m128 volume_shift = _mm_sub_ss(volume_target, volume);                                            // SSE intrinsics: subtract
+        __m128 volume_shift = _mm_sub_ss(volume_target, volume);                // SSE intrinsics: subtract
         __m128 const fadespeed_max = _mm_set_ss(thisdeck.volume_fadespeed);
-        __m128 const fadespeed_min = _mm_xor_ps(fadespeed_max, signmask);                                   // SSE intrinsics: xor (to flip the sign)
-        volume_shift = _mm_min_ss(volume_shift, fadespeed_max);                                             // SSE intrinsics: branchless min (clamp top)
-        volume_shift = _mm_max_ss(volume_shift, fadespeed_min);                                             // SSE intrinsics: branchless max (clamp bottom)
-        _mm_store_ss(&thisdeck.volume, _mm_add_ss(_mm_set_ss(thisdeck.volume), volume_shift));              // SSE intrinsics: add
+        __m128 const fadespeed_min = _mm_xor_ps(fadespeed_max, signmask);       // SSE intrinsics: xor (to flip the sign)
+        volume_shift = _mm_min_ss(volume_shift, fadespeed_max);                 // SSE intrinsics: branchless min (clamp top)
+        volume_shift = _mm_max_ss(volume_shift, fadespeed_min);                 // SSE intrinsics: branchless max (clamp bottom)
+        _mm_store_ss(&thisdeck.volume, _mm_add_ss(_mm_set_ss(thisdeck.volume), volume_shift)); // SSE intrinsics: add
       #endif // SOUNDSTORM_NO_SSE
 
       out[channel_type::LEFT ][i] += thisdeck.buffer_l[thisdeck.buffer_read][thisdeck.buffer_read_seek] * thisdeck.volume;
@@ -383,7 +383,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
     #if defined(SOUNDSTORM_NO_SSE) || defined(DEBUG_SOUNDSTORM)                 // skip using branchless intrins if we need debugging output
       if(hdr_window_top < max_level) {
         hdr_window_top = max_level;
-        //hdr_window_bottom = std::min(0.0f, hdr_window_top - max_level);         // slide up the bottom of the window to match
+        //hdr_window_bottom = std::min(0.0f, hdr_window_top - max_level);       // slide up the bottom of the window to match
         #ifdef DEBUG_SOUNDSTORM
           std::cout << "SoundStorm: DEBUG: HDR window raised to " << hdr_window_bottom << " - " << hdr_window_top << std::endl;
           if(hdr_window_top > session_max_hdr_window_top) {
@@ -397,7 +397,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
         #endif // DEBUG_SOUNDSTORM
       }
     #else
-      _mm_store_ss(&hdr_window_top, _mm_max_ss(_mm_set_ss(hdr_window_top), _mm_set_ss(max_level)));  // SSE intrinsicts: branchless max
+      _mm_store_ss(&hdr_window_top, _mm_max_ss(_mm_set_ss(hdr_window_top), _mm_set_ss(max_level))); // SSE intrinsicts: branchless max
     #endif // SOUNDSTORM_NO_SSE || DEBUG_SOUNDSTORM
     float const final_scale = volume_master / hdr_window_top;                   // final global volume control and HDR window scaling
     for(unsigned int channel = 0; channel != channels; ++channel) {             // scale all channels
@@ -1113,7 +1113,7 @@ void soundstorm::fade_music_volume(unsigned int deck_id, float newvolume, float 
       return;
     }
   #endif // NDEBUG
-  decks[deck_id].volume_fadespeed = std::abs(newvolume - decks[deck_id].volume) / (seconds_to_take * samplerate);  // this comes first since we're threaded
+  decks[deck_id].volume_fadespeed = std::abs(newvolume - decks[deck_id].volume) / (seconds_to_take * samplerate); // this comes first since we're threaded
   decks[deck_id].volume_target = newvolume;
 }
 
@@ -1142,7 +1142,7 @@ void soundstorm::stop_loop(soundgroup const &thissoundgroup) {
 void soundstorm::replace(soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start, float seek_end, float seek_speed) {
   /// Immediately replace the currently playing sound with a new effect with the specified parameters
   #ifndef NDEBUG
-    if(!neweffect) {   // null check only in debug mode
+    if(!neweffect) {                                                            // null check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with null effect!" << std::endl;
       return;
     }
@@ -1188,7 +1188,7 @@ void soundstorm::set_seek_speed(soundgroup const &thissoundgroup, float newspeed
 void soundstorm::music_clear(unsigned int deck_id) {
   /// Clear the playlist on the specified deck
   #ifndef NDEBUG
-    if(deck_id >= decks.size()) {   // safety check only in debug mode
+    if(deck_id >= decks.size()) {                                               // safety check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with deck_id " << deck_id << " exceeding available decks!" << std::endl;
       return;
     }
@@ -1196,7 +1196,7 @@ void soundstorm::music_clear(unsigned int deck_id) {
   while(!decks[deck_id].playlist.empty()) {
     delete decks[deck_id].playlist.front();
     decks[deck_id].playlist.pop();
-    //decks[deck_id].buffer_read_seek = deck_buffer_size;                         // wind it to the end of the current buffer
+    //decks[deck_id].buffer_read_seek = deck_buffer_size;                       // wind it to the end of the current buffer
     //decks[deck_id].buffer_needs_filled = true;
   }
 }
