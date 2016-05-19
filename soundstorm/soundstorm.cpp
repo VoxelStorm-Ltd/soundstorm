@@ -2,12 +2,15 @@
 #include <iostream>
 #include "platform_defines.h"
 #include "cast_if_required.h"
+#ifndef SOUNDSTORM_NO_SSE
+  #include <xmmintrin.h>
+#endif // SOUNDSTORM_NO_SSE
 #ifdef PLATFORM_LINUX
   #include "pa_linux_alsa.h"
 #endif // PLATFORM_LINUX
 #ifndef NDEBUG
   #include <cassert>
-#endif
+#endif // NDEBUG
 
 soundstorm::soundstorm()
   : soundstorm(2) {
@@ -242,7 +245,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
     if(playing.size() > session_max_simultaneous_sounds) {
       session_max_simultaneous_sounds = playing.size();
     }
-  #endif
+  #endif // DEBUG_SOUNDSTORM
 
   // check and slide the HDR window
   //hdr_window_top    -= hdr_dropback_rate;                                     // first droop by the default amount
