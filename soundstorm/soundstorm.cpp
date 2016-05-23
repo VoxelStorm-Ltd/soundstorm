@@ -295,7 +295,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       float const head_shadow_delay = head_shadow_delay_max * angle_ratio;
       float apparent_seek __attribute__((__aligned__(16))) = thissound.seek - ((seek_delay + head_shadow_delay) * samplerate); // rewind to account for time delays
       if(apparent_seek >= 0.0f) {                                               // avoid trying to play before the start of the effect
-        if(apparent_seek >= thissound.effect->buffersize ||
+        if(static_cast<size_t>(apparent_seek) >= thissound.effect->buffersize ||
            (thissound.seek_end != 0.0f && apparent_seek >= thissound.seek_end)) {
           // we've reached the end of this effect or our own seek limit
           if(thissound.next_sound) {
