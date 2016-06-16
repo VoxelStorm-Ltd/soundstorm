@@ -159,7 +159,7 @@ void soundstorm::resize_decks() {
     thisdeck.buffer_r[0].resize(deck_buffer_size, 0.0f);
     thisdeck.buffer_l[1].resize(deck_buffer_size, 0.0f);
     thisdeck.buffer_r[1].resize(deck_buffer_size, 0.0f);
-    //thisdeck.buffer_read = 1;                                                 // so that buffer 0 will be pre-filled
+    //thisdeck.buffer_read = 1;                                                   // so that buffer 0 will be pre-filled
     thisdeck.buffer_read = 0;
     thisdeck.buffer_needs_filled = true;
   }
@@ -222,7 +222,7 @@ void soundstorm::stop_streamer() {
     std::cout << "SoundStorm: Stopping streamer thread..." << std::endl;
     streamer_run = false;                                                       // tell the streamer not to run another cycle
     // available with boost::thread only, not std::thread:
-    //streamer_thread->interrupt();                                             // and send an interrupt signal for quicker cleanup
+    //streamer_thread->interrupt();                                               // and send an interrupt signal for quicker cleanup
     if(streamer_thread->joinable()) {
       try {
         streamer_thread->join();                                                // wait for the streamer thread to finish
@@ -248,7 +248,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
   #endif // DEBUG_SOUNDSTORM
 
   // check and slide the HDR window
-  //hdr_window_top    -= hdr_dropback_rate;                                     // first droop by the default amount
+  //hdr_window_top    -= hdr_dropback_rate;                                       // first droop by the default amount
   //hdr_window_bottom -= hdr_dropback_rate;
   hdr_window_top    *= hdr_dropback_rate;                                       // first droop by the default amount
   hdr_window_bottom *= hdr_dropback_rate;
@@ -386,7 +386,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
     #if defined(SOUNDSTORM_NO_SSE) || defined(DEBUG_SOUNDSTORM)                 // skip using branchless intrins if we need debugging output
       if(hdr_window_top < max_level) {
         hdr_window_top = max_level;
-        //hdr_window_bottom = std::min(0.0f, hdr_window_top - max_level);       // slide up the bottom of the window to match
+        //hdr_window_bottom = std::min(0.0f, hdr_window_top - max_level);         // slide up the bottom of the window to match
         #ifdef DEBUG_SOUNDSTORM
           std::cout << "SoundStorm: DEBUG: HDR window raised to " << hdr_window_bottom << " - " << hdr_window_top << std::endl;
           if(hdr_window_top > session_max_hdr_window_top) {
@@ -417,11 +417,11 @@ void soundstorm::streamer() {
   #endif // DEBUG_SOUNDSTORM
   ov_callbacks callbacks;
   callbacks.read_func  = &soundstorm::ogg_callback_read;
-  //callbacks.seek_func  = &soundstorm::ogg_callback_seek;                      // can be NULL to treat as non-seekable
+  //callbacks.seek_func  = &soundstorm::ogg_callback_seek;                        // can be NULL to treat as non-seekable
   callbacks.seek_func  = NULL;
-  //callbacks.close_func = &soundstorm::ogg_callback_close;                     // or can just be NULL for no close
+  //callbacks.close_func = &soundstorm::ogg_callback_close;                       // or can just be NULL for no close
   callbacks.close_func = NULL;
-  //callbacks.tell_func  = &soundstorm::ogg_callback_tell;                      // can be NULL to treat as non-seekable
+  //callbacks.tell_func  = &soundstorm::ogg_callback_tell;                        // can be NULL to treat as non-seekable
   callbacks.tell_func  = NULL;
 
   do {
@@ -1199,7 +1199,7 @@ void soundstorm::music_clear(unsigned int deck_id) {
   while(!decks[deck_id].playlist.empty()) {
     delete decks[deck_id].playlist.front();
     decks[deck_id].playlist.pop();
-    //decks[deck_id].buffer_read_seek = deck_buffer_size;                       // wind it to the end of the current buffer
+    //decks[deck_id].buffer_read_seek = deck_buffer_size;                         // wind it to the end of the current buffer
     //decks[deck_id].buffer_needs_filled = true;
   }
 }
