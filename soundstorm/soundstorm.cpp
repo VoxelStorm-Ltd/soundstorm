@@ -320,7 +320,9 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
             #ifdef DEBUG_SOUNDSTORM
               std::cout << "SoundStorm: DEBUG: finished playing sound at seek point " << apparent_seek << " after " << apparent_seek / samplerate << "s" << std::endl;
             #endif // DEBUG_SOUNDSTORM
+            sound *oldsound = *it;
             it = playing.erase(it);
+            delete oldsound;
             continue;                                                           // we have nothing to contribute to the stream
           }
         }
