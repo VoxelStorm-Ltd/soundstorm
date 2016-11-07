@@ -6,7 +6,7 @@
   #include <xmmintrin.h>
 #endif // SOUNDSTORM_NO_SSE
 #ifdef PLATFORM_LINUX
-  #include "pa_linux_alsa.h"
+  #include <pa_linux_alsa.h>
 #endif // PLATFORM_LINUX
 #ifndef NDEBUG
   #include <cassert>
