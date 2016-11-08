@@ -243,7 +243,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
   #ifdef DEBUG_SOUNDSTORM
     assert(buffer_out != NULL);
     if(playing.size() > session_max_simultaneous_sounds) {
-      session_max_simultaneous_sounds = playing.size();
+      session_max_simultaneous_sounds = static_cast<unsigned int>(playing.size());
     }
   #endif // DEBUG_SOUNDSTORM
 
