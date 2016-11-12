@@ -64,11 +64,12 @@ soundstorm::soundstorm(unsigned int number_of_decks) try
 soundstorm::~soundstorm() {
   /// Default destructor
   dump_session_report();
+  stream->abort();                                                              // tell the stream to stop without waiting for the buffers to finish
+  shutdown_device();
   stop_streamer();
   auto playing_backup = playing;                                                // so we can delete these after
   playing.clear();
   decks.clear();
-  stream->abort();                                                              // tell the stream to stop without waiting for the buffers to finish
   for(auto &it : playing_backup) {
     delete it;
   }
@@ -79,7 +80,6 @@ soundstorm::~soundstorm() {
     delete it;
   }
   effect_library.clear();
-  shutdown_device();
   audio_system->terminate();                                                    // release audio resources
 }
 
