@@ -291,7 +291,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       #ifdef DEBUG_SOUNDSTORM
         //std::cout << "DEBUG: " << playing.size() << " pos " << vec3i(thissound.position) << " dist " << distance << " ch" << thissound.channel << " delay " << seek_delay << "s" << std::endl;
       #endif // DEBUG_SOUNDSTORM
-      float const angle_ratio = std::acos(thisear.orientation.dotProduct(thissound.position - thisear.position) / distance) / static_cast<float>(M_PI);
+      float const angle_ratio = std::acos(thisear.orientation.dot(thissound.position - thisear.position) / distance) / static_cast<float>(M_PI);
       float const head_shadow_delay = head_shadow_delay_max * angle_ratio;
       float apparent_seek __attribute__((__aligned__(16))) = thissound.seek - ((seek_delay + head_shadow_delay) * samplerate); // rewind to account for time delays
       if(apparent_seek >= 0.0f) {                                               // avoid trying to play before the start of the effect
