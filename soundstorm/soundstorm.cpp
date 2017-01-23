@@ -1097,6 +1097,17 @@ soundstorm::music *soundstorm::music_queue(unsigned int deck_id, unsigned int mu
   return thismusic;
 }
 
+float soundstorm::get_music_volume(unsigned int deck_id) {
+  /// Return the target volume of the specified deck
+  #ifndef NDEBUG
+    if(deck_id >= decks.size()) {                                               // safety check only in debug mode
+      std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with deck_id " << deck_id << " exceeding available decks!" << std::endl;
+      return 0.0f;
+    }
+  #endif // NDEBUG
+  return decks[deck_id].volume_target;
+}
+
 void soundstorm::set_music_volume(unsigned int deck_id, float newvolume) {
   /// Instantly apply a new volume level to the specified deck
   #ifndef NDEBUG

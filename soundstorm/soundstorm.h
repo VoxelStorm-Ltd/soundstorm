@@ -161,8 +161,8 @@ private:
     float session_max_hdr_window_top    = hdr_window_top;                       // keep track of some session-wide extremes for debugging
     float session_max_hdr_window_bottom = hdr_window_bottom;
     unsigned int session_max_simultaneous_sounds = 0;
-    float session_min_distance = 10000.0;
-    float session_max_distance = 0.0;
+    float session_min_distance = 10000.0f;
+    float session_max_distance = 0.0f;
   #endif // DEBUG_SOUNDSTORM
 
 public:
@@ -212,7 +212,7 @@ public:
 
   // state
   vec3f const &get_listener_position() const __attribute__((__const__));
-  quatf    const &get_listener_rotation() const __attribute__((__const__));
+  quatf const &get_listener_rotation() const __attribute__((__const__));
   vec3f const &get_listener_velocity() const __attribute__((__const__));
   void set_listener_position(vec3f const &newposition);
   void set_listener_rotation(quatf    const &newrotation);
@@ -229,18 +229,23 @@ public:
   unsigned int music_load(unsigned char const *buffer, size_t buffersize);
 
   // playback control
-  void play(     unsigned int effect_id, vec3f const &position, vec3f const &velocity, float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
-  void play(     vec3f const &position, vec3f const &velocity, soundeffect *effect,    float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
-  void play_loop(unsigned int effect_id, vec3f const &position, vec3f const &velocity, float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
-  void play_loop(vec3f const &position, vec3f const &velocity, soundeffect *effect,    float volume = 1.0, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0, soundgroup *thissoundgroup = nullptr);
+  void play(     unsigned int effect_id, vec3f const &position, vec3f const &velocity, float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
+  void play(     vec3f const &position, vec3f const &velocity, soundeffect *effect,    float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
+  void play_loop(unsigned int effect_id, vec3f const &position, vec3f const &velocity, float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
+  void play_loop(vec3f const &position, vec3f const &velocity, soundeffect *effect,    float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
   music *music_queue(unsigned int deck_id, unsigned int music_id);
+  #ifdef NDEBUG
+    float get_music_volume(unsigned int deck_id) __attribute__((__pure__));
+  #else
+    float get_music_volume(unsigned int deck_id);
+  #endif // NDEBUG
   void set_music_volume(unsigned int deck_id, float newvolume);
   void fade_music_volume(unsigned int deck_id, float newvolume, float seconds_to_take);
   void crossfade_music(float seconds_to_take, unsigned int deck_from = 0, unsigned int deck_to = 1);
   void stop(          soundgroup const &thissoundgroup);
   void stop_loop(     soundgroup const &thissoundgroup);
-  void replace(       soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0);
-  void follow(        soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0, float seek_end = 0.0, float seek_speed = 1.0);
+  void replace(       soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f);
+  void follow(        soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f);
   void set_volume(    soundgroup const &thissoundgroup, float newvolume);
   void set_position(  soundgroup const &thissoundgroup, vec3f const &newposition);
   void set_seek_speed(soundgroup const &thissoundgroup, float newspeed);
