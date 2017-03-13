@@ -389,11 +389,11 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
           //__m128 volume_shift = _mm_sub_ss(_mm_set_ss(thisdeck.volume_target), _mm_set_ss(thisdeck.volume)); // SSE intrinsics: subtract
           __m128 const volume_target = _mm_set_ss(thisdeck.volume_target);
           __m128 const volume        = _mm_set_ss(thisdeck.volume);
-          __m128 volume_shift = _mm_sub_ss(volume_target, volume);                // SSE intrinsics: subtract
+          __m128 volume_shift = _mm_sub_ss(volume_target, volume);              // SSE intrinsics: subtract
           __m128 const fadespeed_max = _mm_set_ss(thisdeck.volume_fadespeed);
-          __m128 const fadespeed_min = _mm_xor_ps(fadespeed_max, signmask);       // SSE intrinsics: xor (to flip the sign)
-          volume_shift = _mm_min_ss(volume_shift, fadespeed_max);                 // SSE intrinsics: branchless min (clamp top)
-          volume_shift = _mm_max_ss(volume_shift, fadespeed_min);                 // SSE intrinsics: branchless max (clamp bottom)
+          __m128 const fadespeed_min = _mm_xor_ps(fadespeed_max, signmask);     // SSE intrinsics: xor (to flip the sign)
+          volume_shift = _mm_min_ss(volume_shift, fadespeed_max);               // SSE intrinsics: branchless min (clamp top)
+          volume_shift = _mm_max_ss(volume_shift, fadespeed_min);               // SSE intrinsics: branchless max (clamp bottom)
           _mm_store_ss(&thisdeck.volume, _mm_add_ss(_mm_set_ss(thisdeck.volume), volume_shift)); // SSE intrinsics: add
         #endif // SOUNDSTORM_NO_SSE
       }
