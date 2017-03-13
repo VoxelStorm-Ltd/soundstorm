@@ -14,6 +14,9 @@
 #ifdef VECTORSTORM_NO_BOOST
   #include <boost/range/iterator_range_core.hpp>
 #endif // VECTORSTORM_NO_BOOST
+#ifdef DEBUG_SOUNDSTORM
+  #include "memorystorm/memorystorm.h"
+#endif // DEBUG_SOUNDSTORM
 
 soundstorm::soundstorm()
   : soundstorm(2) {
@@ -42,7 +45,20 @@ soundstorm::soundstorm(unsigned int number_of_decks) try
     std::cout << "SoundStorm: audio_system: Unknown exception!" << std::endl;
     return;
   }
-  std::cout << "SoundStorm: " << audio_system->versionText() << " build " << audio_system->version() << std::endl;
+  std::cout << "SoundStorm: " << audio_system->versionText() << " build " << audio_system->version()
+  #ifdef DEBUG_SOUNDSTORM
+    << " (debug)"
+  #endif // DEBUG_SOUNDSTORM
+  #ifdef SOUNDSTORM_NO_STREAM_SEEK
+    << " (no stream seek)"
+  #endif // SOUNDSTORM_NO_STREAM_SEEK
+  #ifdef SOUNDSTORM_NO_SSE
+    << " (no SSE)"
+  #endif // SOUNDSTORM_NO_SSE
+  #ifdef NSOUND
+    << " (no sound output)"
+  #endif // NSOUND
+    << std::endl;
   if(!audio_system->exists()) {
     std::cout << "SoundStorm: Error: sound engine claims not to exist." << std::endl;
     return;
@@ -66,24 +82,24 @@ soundstorm::soundstorm(unsigned int number_of_decks) try
 
 soundstorm::~soundstorm() {
   /// Default destructor
+  std::cout << "SoundStorm: Shutting down..." << std::endl;
   dump_session_report();
-  stream->abort();                                                              // tell the stream to stop without waiting for the buffers to finish
-  shutdown_device();
+  if(stream) {
+    stream->abort();                                                            // tell the stream to stop without waiting for the buffers to finish
+    shutdown_device();
+  }
   stop_streamer();
-  auto playing_backup = playing;                                                // so we can delete these after
   playing.clear();
+  for(deck &thisdeck : decks) {
+    if(thisdeck.oggfile) {
+      ov_clear(thisdeck.oggfile.get());                                         // reset the oggfile to avoid memory leaks
+    }
+  }
   decks.clear();
-  for(auto &it : playing_backup) {
-    delete it;
-  }
-  for(auto &it : effect_library) {
-    delete it;
-  }
-  for(auto &it : music_library) {
-    delete it;
-  }
   effect_library.clear();
+  music_library.clear();
   audio_system->terminate();                                                    // release audio resources
+  std::cout << "SoundStorm: Shutdown complete." << std::endl;
 }
 
 void soundstorm::init_device() {
@@ -114,24 +130,30 @@ void soundstorm::init_device() {
   }
 
   // set up the parameters required to open a (Callback)Stream:
-  stream_out_params = new portaudio::DirectionSpecificStreamParameters(
+  stream_out_params = std::make_unique<portaudio::DirectionSpecificStreamParameters>(
     *audio_device,                                                              // device
     channels,                                                                   // output channels
     portaudio::FLOAT32,                                                         // sample data format http://riot.so/portaudiocpp/a00060.html#a30bc71f065706d41a5d9208ea861e4a6
     false,                                                                      // interleaved
     audio_device->defaultLowOutputLatency(),                                    // latency
-    NULL);                                                                      // hostApiSpecificStreamInfo
-  stream_params = new portaudio::StreamParameters(
+    nullptr);                                                                   // hostApiSpecificStreamInfo
+  stream_params = std::make_unique<portaudio::StreamParameters>(
     portaudio::DirectionSpecificStreamParameters::null(),                       // input stream parameters
     *stream_out_params,                                                         // output stream parameters
     samplerate,                                                                 // sample rate
     frames_per_buffer,                                                          // frames per buffer for a CallbackStream, or the preferred buffer granularity for a BlockingStream.
     paClipOff | paDitherOff);                                                   // The flags for the stream, default paNoFlag http://portaudio.com/docs/v19-doxydocs/portaudio_8h.html#ad33384abe3754a39f4773f2561773595
 
-  stream = new portaudio::MemFunCallbackStream<soundstorm>(
-    *stream_params,                                                             // stream parameters
-    *this,                                                                      // class instance
-    &soundstorm::mixer);                                                        // member function to call
+  try {
+    stream = std::make_unique<portaudio::MemFunCallbackStream<soundstorm>>(
+      *stream_params,                                                           // stream parameters
+      *this,                                                                    // class instance
+      &soundstorm::mixer);                                                      // member function to call
+  } catch(std::exception &e) {
+    std::cout << "SoundStorm: Exception starting stream: " << e.what() << std::endl;
+    enabled = false;
+    return;
+  }
 
   #ifdef PLATFORM_LINUX
     int alsacard;
@@ -154,9 +176,22 @@ void soundstorm::init_device() {
 }
 void soundstorm::resize_decks() {
   /// Resize the decks to the correct number and buffer size, and reset the buffers
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: DEBUG: Resizing decks to " << num_decks << std::endl;
+  #endif // DEBUG_SOUNDSTORM
+  for(deck &thisdeck : decks) {
+    if(thisdeck.oggfile) {
+      ov_clear(thisdeck.oggfile.get());                                         // reset the oggfile to avoid memory leaks
+      thisdeck.oggfile.reset();
+    }
+    thisdeck.clear_old_oggfile = false;
+  }
   // decks must be initialised before the mixer starts
   decks.resize(num_decks);
+  unsigned int deck_id = 0;
   for(deck &thisdeck : decks) {
+    thisdeck.id = deck_id;
+    ++deck_id;
     // initialise deck output buffers to zero
     thisdeck.buffer_l[0].resize(deck_buffer_size, 0.0f);
     thisdeck.buffer_r[0].resize(deck_buffer_size, 0.0f);
@@ -174,24 +209,19 @@ void soundstorm::shutdown_device() {
       stream->stop();
     }
     stream->close();
-    delete stream;
-    stream = nullptr;
+    stream.reset();
   }
-  delete stream_out_params;
-  stream_out_params = nullptr;
-  delete stream_params;
-  stream_params = nullptr;
+  stream_out_params.reset();
+  stream_params.reset();
   enabled = false;
-  std::cout << "SoundStorm: Shutdown complete." << std::endl;
+  std::cout << "SoundStorm: Device shutdown complete." << std::endl;
 }
 
 void soundstorm::restart_device() {
   /// Shut down and reinitialise the stream with the currently selected device - needed after device change
   std::cout << "SoundStorm: Restarting device..." << std::endl;
-  bool const reinitialise_streamer = streamer_run;
-  if(reinitialise_streamer) {                                                   // if the streamer's currently running, shut it down
-    stop_streamer();
-  }
+  bool const reinitialise_streamer = streamer_run;                              // decide whether we should be stopping the streamer
+  stop_streamer();                                                              // stop the streamer, whether it's currently running or not
   shutdown_device();
   init_device();
   if(reinitialise_streamer) {                                                   // if the streamer was running at restart, restart it
@@ -215,26 +245,23 @@ void soundstorm::start_streamer() {
 
   // start the streaming decoder thread
   #ifndef NSOUND
-    streamer_thread = new std::thread(std::bind(&soundstorm::streamer, this));
+    streamer_thread = std::thread(std::bind(&soundstorm::streamer, this));
   #endif // NSOUND
 }
 
 void soundstorm::stop_streamer() {
   /// Stop the streamer thread if it's running
-  if(streamer_thread) {
-    std::cout << "SoundStorm: Stopping streamer thread..." << std::endl;
-    streamer_run = false;                                                       // tell the streamer not to run another cycle
-    // available with boost::thread only, not std::thread:
-    //streamer_thread->interrupt();                                               // and send an interrupt signal for quicker cleanup
-    if(streamer_thread->joinable()) {
-      try {
-        streamer_thread->join();                                                // wait for the streamer thread to finish
-      } catch(...) {                                                            // ignore exceptions
-      }
+  std::cout << "SoundStorm: Stopping streamer thread..." << std::endl;
+  streamer_run = false;                                                         // tell the streamer not to run another cycle
+  // available with boost::thread only, not std::thread:
+  //streamer_thread->interrupt();                                                 // and send an interrupt signal for quicker cleanup
+  if(streamer_thread.joinable()) {
+    try {
+      streamer_thread.join()   ;                                                // wait for the streamer thread to finish
+    } catch(...) {                                                              // ignore exceptions
     }
-    delete streamer_thread;
-    streamer_thread = nullptr;
   }
+  streamer_thread = std::thread();                                              // reset the thread
 }
 
 int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
@@ -244,7 +271,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
                       PaStreamCallbackFlags status_flags __attribute__((__unused__))) {
   /// The callback that feeds sample data to the sound stream
   #ifdef DEBUG_SOUNDSTORM
-    assert(buffer_out != NULL);
+    assert(buffer_out);
     if(playing.size() > session_max_simultaneous_sounds) {
       session_max_simultaneous_sounds = static_cast<unsigned int>(playing.size());
     }
@@ -298,11 +325,11 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       float const head_shadow_delay = head_shadow_delay_max * angle_ratio;
       float apparent_seek __attribute__((__aligned__(16))) = thissound.seek - ((seek_delay + head_shadow_delay) * samplerate); // rewind to account for time delays
       if(apparent_seek >= 0.0f) {                                               // avoid trying to play before the start of the effect
-        if(static_cast<size_t>(apparent_seek) >= thissound.effect->buffersize ||
+        if(static_cast<size_t>(apparent_seek) >= thissound.effect->buffer.size() ||
            (thissound.seek_end != 0.0f && apparent_seek >= thissound.seek_end)) {
           // we've reached the end of this effect or our own seek limit
           if(thissound.next_sound) {
-            if(thissound.next_sound == &thissound) {
+            if(thissound.next_sound.get() == &thissound) {
               // this is a one-sound loop, so just rewind to the beginning
               thissound.seek = -thissound.seek_speed;                           // rewind one step make sure the first sample is really 0
               apparent_seek = thissound.seek - seek_delay;                      // rewind to account for time delay
@@ -314,18 +341,13 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
                 _mm_store_ss(&apparent_seek, _mm_max_ss(_mm_set_ss(apparent_seek), _mm_set_ss(0.0f))); // SSE intrinsicts: branchless max
               #endif // SOUNDSTORM_NO_SSE
             } else {
-              // we have something else queued up, so replace us with it and destroy the original
-              sound *oldsound = *it;
-              *it = oldsound->next_sound;
-              delete oldsound;
+              *it = (*it)->next_sound;                                          // we have something else queued up, so replace us with it - smart pointers take care of destroying the original
             }
           } else {
             #ifdef DEBUG_SOUNDSTORM
               std::cout << "SoundStorm: DEBUG: finished playing sound at seek point " << apparent_seek << " after " << apparent_seek / samplerate << "s" << std::endl;
             #endif // DEBUG_SOUNDSTORM
-            sound *oldsound = *it;
             it = playing.erase(it);
-            delete oldsound;
             continue;                                                           // we have nothing to contribute to the stream
           }
         }
@@ -358,31 +380,34 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
 
     // play the music
     for(deck &thisdeck : decks) {
-      // perform any fades we need to
-      #ifdef SOUNDSTORM_NO_SSE
-        thisdeck.volume += std::min(std::max(thisdeck.volume_target - thisdeck.volume, thisdeck.volume_fadespeed), -thisdeck.volume_fadespeed);
-      #else
-        static __m128 const signmask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000)); // SSE intrinsic bitmask for float sign
-        //__m128 volume_shift = _mm_sub_ss(_mm_set_ss(thisdeck.volume_target), _mm_set_ss(thisdeck.volume)); // SSE intrinsics: subtract
-        __m128 const volume_target = _mm_set_ss(thisdeck.volume_target);
-        __m128 const volume        = _mm_set_ss(thisdeck.volume);
-        __m128 volume_shift = _mm_sub_ss(volume_target, volume);                // SSE intrinsics: subtract
-        __m128 const fadespeed_max = _mm_set_ss(thisdeck.volume_fadespeed);
-        __m128 const fadespeed_min = _mm_xor_ps(fadespeed_max, signmask);       // SSE intrinsics: xor (to flip the sign)
-        volume_shift = _mm_min_ss(volume_shift, fadespeed_max);                 // SSE intrinsics: branchless min (clamp top)
-        volume_shift = _mm_max_ss(volume_shift, fadespeed_min);                 // SSE intrinsics: branchless max (clamp bottom)
-        _mm_store_ss(&thisdeck.volume, _mm_add_ss(_mm_set_ss(thisdeck.volume), volume_shift)); // SSE intrinsics: add
-      #endif // SOUNDSTORM_NO_SSE
-
-      out[channel_type::LEFT ][i] += thisdeck.buffer_l[thisdeck.buffer_read][thisdeck.buffer_read_seek] * thisdeck.volume;
-      out[channel_type::RIGHT][i] += thisdeck.buffer_r[thisdeck.buffer_read][thisdeck.buffer_read_seek] * thisdeck.volume;
+      if(thisdeck.volume != thisdeck.volume_target) {
+        // perform any fades we need to
+        #ifdef SOUNDSTORM_NO_SSE
+          thisdeck.volume += boost::clamp(thisdeck.volume_target - thisdeck.volume, -thisdeck.volume_fadespeed, thisdeck.volume_fadespeed);
+        #else
+          static __m128 const signmask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000)); // SSE intrinsic bitmask for float sign
+          //__m128 volume_shift = _mm_sub_ss(_mm_set_ss(thisdeck.volume_target), _mm_set_ss(thisdeck.volume)); // SSE intrinsics: subtract
+          __m128 const volume_target = _mm_set_ss(thisdeck.volume_target);
+          __m128 const volume        = _mm_set_ss(thisdeck.volume);
+          __m128 volume_shift = _mm_sub_ss(volume_target, volume);                // SSE intrinsics: subtract
+          __m128 const fadespeed_max = _mm_set_ss(thisdeck.volume_fadespeed);
+          __m128 const fadespeed_min = _mm_xor_ps(fadespeed_max, signmask);       // SSE intrinsics: xor (to flip the sign)
+          volume_shift = _mm_min_ss(volume_shift, fadespeed_max);                 // SSE intrinsics: branchless min (clamp top)
+          volume_shift = _mm_max_ss(volume_shift, fadespeed_min);                 // SSE intrinsics: branchless max (clamp bottom)
+          _mm_store_ss(&thisdeck.volume, _mm_add_ss(_mm_set_ss(thisdeck.volume), volume_shift)); // SSE intrinsics: add
+        #endif // SOUNDSTORM_NO_SSE
+      }
+      if(thisdeck.volume != 0) {
+        out[channel_type::LEFT ][i] += thisdeck.buffer_l[thisdeck.buffer_read][thisdeck.buffer_read_seek] * thisdeck.volume;
+        out[channel_type::RIGHT][i] += thisdeck.buffer_r[thisdeck.buffer_read][thisdeck.buffer_read_seek] * thisdeck.volume;
+      }
       ++thisdeck.buffer_read_seek;
       if(thisdeck.buffer_read_seek == deck_buffer_size) {                       // we've reached the end of this buffer
         thisdeck.buffer_read = 1 - thisdeck.buffer_read;                        // flip the ping-pongs
         thisdeck.buffer_needs_filled = true;                                    // flag it as needing refilled
         thisdeck.buffer_read_seek = 0;                                          // rewind
         #ifdef DEBUG_SOUNDSTORM
-          //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer flipped to " << thisdeck.buffer_read << std::endl;
+          //std::cout << "SoundStorm: DEBUG: deck " << thisdeck.id << " buffer flipped to " << thisdeck.buffer_read << std::endl;
         #endif // DEBUG_SOUNDSTORM
       }
     }
@@ -418,89 +443,162 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
 void soundstorm::streamer() {
   /// Streaming decoder that checks and fills the deck buffers
   #ifdef DEBUG_SOUNDSTORM
-    std::cout << "SoundStorm: DEBUG: streamer starting" << std::endl;
+    std::cout << "SoundStorm: Streamer: DEBUG: streamer starting" << std::endl;
   #endif // DEBUG_SOUNDSTORM
   ov_callbacks callbacks;
   callbacks.read_func  = &soundstorm::ogg_callback_read;
-  //callbacks.seek_func  = &soundstorm::ogg_callback_seek;                        // can be NULL to treat as non-seekable
-  callbacks.seek_func  = NULL;
-  //callbacks.close_func = &soundstorm::ogg_callback_close;                       // or can just be NULL for no close
-  callbacks.close_func = NULL;
-  //callbacks.tell_func  = &soundstorm::ogg_callback_tell;                        // can be NULL to treat as non-seekable
-  callbacks.tell_func  = NULL;
+  callbacks.close_func = &soundstorm::ogg_callback_close;                       // or can just be NULL for no close
+  #ifdef SOUNDSTORM_STREAM_SEEK_ENABLE
+    callbacks.seek_func = &soundstorm::ogg_callback_seek;                       // can be NULL to treat as non-seekable
+    callbacks.tell_func = &soundstorm::ogg_callback_tell;                       // can be NULL to treat as non-seekable
+  #else
+    callbacks.seek_func = nullptr;
+    callbacks.tell_func = nullptr;
+  #endif // SOUNDSTORM_STREAM_SEEK_ENABLE
+
+  auto init_oggfile = [&callbacks](deck &thisdeck){
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " initialising new ogg reader" << std::endl;
+    #endif // DEBUG_SOUNDSTORM
+    if(thisdeck.oggfile) {
+      #ifdef DEBUG_SOUNDSTORM
+        std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " has an existing oggfile, clearing it first" << std::endl;
+      #endif // DEBUG_SOUNDSTORM
+      ov_clear(thisdeck.oggfile.get());                                         // reset the oggfile to avoid memory leaks
+    }
+    thisdeck.oggfile = std::make_unique<OggVorbis_File>();
+    int result = ov_open_callbacks(&thisdeck, thisdeck.oggfile.get(), nullptr, 0, callbacks);
+    if(result != 0) {
+      switch(result) {
+      case OV_EREAD:
+        std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " ov_open_callbacks: A read from media returned an error: " << result << std::endl;
+        break;
+      case OV_ENOTVORBIS:
+        std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " ov_open_callbacks: Bitstream does not contain any Vorbis data: " << result << std::endl;
+        break;
+      case OV_EVERSION:
+        std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " ov_open_callbacks: Vorbis version mismatch: " << result << std::endl;
+        break;
+      case OV_EBADHEADER:
+        std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " ov_open_callbacks: Invalid Vorbis bitstream header: " << result << std::endl;
+        break;
+      case OV_EFAULT:
+        std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " ov_open_callbacks: Internal logic fault; indicates a bug or heap/stack corruption: " << result << std::endl;
+        break;
+      default:
+        std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " ov_open_callbacks: unknown error " << result << std::endl;
+        break;
+      }
+      return;
+    }
+    #ifdef DEBUG_SOUNDSTORM
+      vorbis_info *info = ov_info(thisdeck.oggfile.get(), -1);
+      std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id <<
+                   " INFO: Bitstream is " << info->channels <<
+                   " channel, " << info->rate << "Hz" << std::endl;
+      auto ov_decoded_length = ov_pcm_total(thisdeck.oggfile.get(), -1);
+      if(ov_decoded_length < 0) {
+        std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id <<
+                     " INFO: Decoded length unknown: " << ov_decoded_length << std::endl;
+      } else {
+        std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id <<
+                     " INFO: Decoded length: " << ov_decoded_length <<
+                     " samples (" << memorystorm::human_readable(ov_decoded_length * sizeof(float) * 2) << ")" << std::endl;
+      }
+      std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id <<
+                   " INFO: Encoded by: " << ov_comment(thisdeck.oggfile.get(), -1)->vendor << std::endl;
+      char **comment = ov_comment(thisdeck.oggfile.get(), -1)->user_comments;
+      while(*comment) {
+        std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " INFO: Ogg comment: " << comment <<std::endl;
+        ++comment;
+      }
+    #endif // DEBUG_SOUNDSTORM
+  };
 
   do {
     for(auto &thisdeck : decks) {
+      if(thisdeck.clear_old_oggfile) {
+        #ifdef DEBUG_SOUNDSTORM
+          std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " clearing old oggfile" << std::endl;
+        #endif // DEBUG_SOUNDSTORM
+        ov_clear(thisdeck.oggfile.get());                                       // reset the oggfile to avoid memory leaks
+        thisdeck.oggfile.reset();
+        thisdeck.clear_old_oggfile = false;
+      }
       if(!thisdeck.oggfile) {                                                   // initialise the per-deck ogg decoders
-        if(thisdeck.playlist.empty()) {
+        if(thisdeck.playlist.empty()) {                                         // having an empty playlist is not an error
           #ifdef DEBUG_SOUNDSTORM
-            std::cout << "SoundStorm: WARNING: deck " << &thisdeck << " given empty playlist" << std::endl;
+            //std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " given empty playlist, skipping" << std::endl;
           #endif // DEBUG_SOUNDSTORM
           continue;
         }
-        thisdeck.oggfile = new OggVorbis_File;
-        int result = ov_open_callbacks(&thisdeck, thisdeck.oggfile, NULL, 0, callbacks);
-        if(result != 0) {
-          switch(result) {
-          case OV_EREAD:
-            std::cout << "SoundStorm: ERROR: deck " << &thisdeck << " ov_open_callbacks A read from media returned an error: " << result << std::endl;
-            break;
-          case OV_ENOTVORBIS:
-            std::cout << "SoundStorm: ERROR: deck " << &thisdeck << " ov_open_callbacks: Bitstream does not contain any Vorbis data: " << result << std::endl;
-            break;
-          case OV_EVERSION:
-            std::cout << "SoundStorm: ERROR: deck " << &thisdeck << " ov_open_callbacks: Vorbis version mismatch: " << result << std::endl;
-            break;
-          case OV_EBADHEADER:
-            std::cout << "SoundStorm: ERROR: deck " << &thisdeck << " ov_open_callbacks: Invalid Vorbis bitstream header: " << result << std::endl;
-            break;
-          case OV_EFAULT:
-            std::cout << "SoundStorm: ERROR: deck " << &thisdeck << " ov_open_callbacks: Internal logic fault; indicates a bug or heap/stack corruption: " << result << std::endl;
-            break;
-          default:
-            std::cout << "SoundStorm: ERROR: deck " << &thisdeck << " ov_open_callbacks: unknown error " << result << std::endl;
-            break;
-          }
-          return;
+        if(!streamer_run) {
+          #ifdef DEBUG_SOUNDSTORM
+            std::cout << "SoundStorm: Streamer: DEBUG: asked to shut down, cancelling creating new ogg reader" << std::endl;
+          #endif // DEBUG_SOUNDSTORM
+          break;                                                                // exit here to try to minimise race conditions
         }
-        #ifdef DEBUG_SOUNDSTORM
-          char **comment = ov_comment(thisdeck.oggfile, -1)->user_comments;
-          while(*comment) {
-            std::cout << "SoundStorm: deck " << &thisdeck << " Ogg comment: " << comment <<std::endl;
-            ++comment;
-          }
-          vorbis_info *info = ov_info(thisdeck.oggfile, -1);
-          std::cout << "SoundStorm: deck " << &thisdeck << " Bitstream is " << info->channels << " channel, " << info->rate << "Hz" << std::endl;
-          std::cout << "SoundStorm: deck " << &thisdeck << " Decoded length: " << ov_pcm_total(thisdeck.oggfile, -1) << " samples" << std::endl;
-          std::cout << "SoundStorm: deck " << &thisdeck << " Encoded by: " << ov_comment(thisdeck.oggfile, -1)->vendor << std::endl;
-        #endif // DEBUG_SOUNDSTORM
+        init_oggfile(thisdeck);
       }
       if(thisdeck.buffer_needs_filled) {
         thisdeck.buffer_needs_filled = false;                                   // reset the flag first
         unsigned int const buffer_write = 1 - thisdeck.buffer_read;
         #ifdef DEBUG_SOUNDSTORM
-          //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer " << buffer_write << " refilling..." << std::endl;
+          //std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " buffer " << buffer_write << " refilling..." << std::endl;
         #endif // DEBUG_SOUNDSTORM
         for(unsigned int i = 0; i != deck_buffer_size;) {
           int current_section;                                                  // what the hell is this even used for?
           float **pcm_channels;
           int samples_read;
           do {
-            samples_read = static_cast<int>(ov_read_float(thisdeck.oggfile, &pcm_channels, deck_buffer_size - i, &current_section));
+            samples_read = static_cast<int>(ov_read_float(thisdeck.oggfile.get(), &pcm_channels, deck_buffer_size - i, &current_section));
             switch(samples_read) {
             case 0:                                                             // EOF
-              //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill got EOF " << samples_read << std::endl;
+              #ifdef SOUNDSTORM_STREAM_SEEK_ENABLE
+                // we've reached the end of file, so advance the playlist
+                #ifdef DEBUG_SOUNDSTORM
+                  std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " buffer " << buffer_write << " fill reached EOF, advancing playlist" << std::endl;
+                #endif // DEBUG_SOUNDSTORM
+                if(thisdeck.playlist.size() == 1) {                             // no track queued after this
+                  if(!thisdeck.repeat) {
+                    //#ifdef DEBUG_SOUNDSTORM
+                      std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " buffer " << buffer_write << " finished playlist, not repeating" << std::endl;
+                    //#endif // DEBUG_SOUNDSTORM
+                    break;
+                  } else {
+                    #ifdef DEBUG_SOUNDSTORM
+                      std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " buffer " << buffer_write << " finished playlist, repeating" << std::endl;
+                    #endif // DEBUG_SOUNDSTORM
+                    thisdeck.playlist.front()->seek = 0;                        // otherwise we just play the current track from the start
+                  }
+                } else {
+                  #ifdef DEBUG_SOUNDSTORM
+                    std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " buffer " << buffer_write << " replacing music with top of playlist" << std::endl;
+                  #endif // DEBUG_SOUNDSTORM
+                  thisdeck.playlist.pop();                                      // take the current entry off the playlist
+                  if(thisdeck.playlist.empty()) {
+                    //#ifdef DEBUG_SOUNDSTORM
+                      std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " buffer " << buffer_write << " playlist finished during fill" << std::endl;
+                    //#endif // DEBUG_SOUNDSTORM
+                    break;
+                  }
+                  thisdeck.playlist.front()->seek = 0;                          // rewind the next track to the beginning
+                }
+                init_oggfile(thisdeck);
+              #else
+                //std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " fill got EOF" << std::endl;
+              #endif // SOUNDSTORM_STREAM_SEEK_ENABLE
               break;
             case OV_HOLE:                                                       // indicates there was an interruption in the data. (one of: garbage between pages, loss of sync followed by recapture, or a corrupt page)
               #ifdef DEBUG_SOUNDSTORM
-                //std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_HOLE " << samples_read << std::endl;
+                std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " buffer " << buffer_write << " fill failed with OV_HOLE (" << samples_read << ") - garbage between pages, ignoring" << std::endl;
               #endif // DEBUG_SOUNDSTORM
               break;                                                            // this is normal when switching tracks
             case OV_EBADLINK:                                                   // indicates that an invalid stream section was supplied to libvorbisfile, or the requested link is corrupt.
-              std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EBADLINK " << samples_read << std::endl;
+              std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " buffer " << buffer_write << " fill failed with OV_EBADLINK (" << samples_read << ") - requested link is corrupt, ignoring" << std::endl;
               break;
             case OV_EINVAL:                                                     // indicates the initial file headers couldn't be read or are corrupt, or that the initial open call for vf failed.
-              std::cout << "SoundStorm: ERROR: streamer: deck " << &thisdeck << " fill failed with OV_EINVAL " << samples_read << std::endl;
+              std::cout << "SoundStorm: Streamer: ERROR: deck " << thisdeck.id << " buffer " << buffer_write << " fill failed with OV_EINVAL (" << samples_read << ") - headers are corrupt, ignoring" << std::endl;
               break;
             }
           } while(samples_read <= 0);
@@ -509,12 +607,13 @@ void soundstorm::streamer() {
             thisdeck.buffer_r[buffer_write][i + s] = pcm_channels[RIGHT][s];
           }
           #ifdef DEBUG_SOUNDSTORM
-            std::cout << "SoundStorm: DEBUG: streamer read " << samples_read << " bytes of " << deck_buffer_size - i << ", current_section " << current_section << std::endl;
+            //std::cout << "SoundStorm: Streamer: DEBUG: read " << memorystorm::human_readable(samples_read) << " of " << memorystorm::human_readable(deck_buffer_size - i) << ", current_section " << current_section << std::endl;
+            session_music_samples_read += samples_read;
           #endif // DEBUG_SOUNDSTORM
           i += static_cast<unsigned int>(samples_read);
         }
         #ifdef DEBUG_SOUNDSTORM
-          //std::cout << "SoundStorm: DEBUG: deck " << &thisdeck << " buffer " << buffer_write << " refilled" << std::endl;
+          //std::cout << "SoundStorm: Streamer: DEBUG: deck " << thisdeck.id << " buffer " << buffer_write << " refilled" << std::endl;
         #endif // DEBUG_SOUNDSTORM
       }
     }
@@ -523,90 +622,108 @@ void soundstorm::streamer() {
   } while(streamer_run);
 
   for(auto &thisdeck : decks) {                                                 // cleanup
-    ov_clear(thisdeck.oggfile);
-    delete thisdeck.oggfile;
-    thisdeck.oggfile = nullptr;
+    if(thisdeck.oggfile) {
+      ov_clear(thisdeck.oggfile.get());
+      thisdeck.oggfile.reset();
+    }
   }
   #ifdef DEBUG_SOUNDSTORM
-    std::cout << "SoundStorm: DEBUG: streamer finished cleanly" << std::endl;
+    std::cout << "SoundStorm: Streamer: DEBUG: finished cleanly" << std::endl;
   #endif // DEBUG_SOUNDSTORM
 }
 
 size_t soundstorm::ogg_callback_read(void *ptr, size_t size, size_t count, void *datasource) {
   /// The interface is identical to that of fread, and identical behaviour is expected
-  #ifdef DEBUG_SOUNDSTORM
-    //std::cout << "SoundStorm: DEBUG: streamer read requested size " << size << " count " << count << std::endl;
-  #endif // DEBUG_SOUNDSTORM
   if(!datasource) {
     #ifdef DEBUG_SOUNDSTORM
-      std::cout << "SoundStorm: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
+      std::cout << "SoundStorm: ogg_callback_read: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
     #endif // DEBUG_SOUNDSTORM
     return 0;                                                                   // nullptr means we've got nothing playing
   }
-  deck *thisdeck = reinterpret_cast<deck*>(datasource);
+  deck &thisdeck = *reinterpret_cast<deck*>(datasource);
   #ifdef DEBUG_SOUNDSTORM
-    if(thisdeck->playlist.empty()) {
-      std::cout << "SoundStorm: DEBUG: streamer read called on deck with empty playlist, this should be checked for in advance." << std::endl;
-      return 0;
-    }
+    //std::cout << "SoundStorm: ogg_callback_read: DEBUG: streamer deck " << thisdeck.id << " read requested size " << memorystorm::human_readable(size) << " count " << count << std::endl;
   #endif // DEBUG_SOUNDSTORM
-  music *thismusic = thisdeck->playlist.front();
-  unsigned char *target = reinterpret_cast<unsigned char*>(ptr);
+  #ifndef NDEBUG
+    if(thisdeck.playlist.empty()) {
+      std::cout << "SoundStorm: ogg_callback_read: WARNING: streamer read called on deck " << thisdeck.id << " with empty playlist, this should be checked for in advance." << std::endl;
+      return 0;
+    }
+  #endif // NDEBUG
+  auto thismusic = thisdeck.playlist.front();
   #ifdef DEBUG_SOUNDSTORM
-    if(thisdeck->checkvalue != 123456) {
-      std::cout << "SoundStorm: DEBUG: streamer read: check value incorrect: " << thisdeck->checkvalue << std::endl;
+    if(thisdeck.checkvalue != deck::correct_checkvalue) {
+      std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " check value incorrect: " << thisdeck.checkvalue << std::endl;
       return 0;
     }
-    if(!thismusic->buffer) {
-      std::cout << "SoundStorm: DEBUG: no library music assigned to this playlist entry - this should never happen!" << std::endl;
+    if(thismusic->buffer.empty()) {
+      std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " empty buffer assigned to this music - this should never happen!" << std::endl;
       return 0;
     }
-    if(!thismusic->buffer->buffer) {
-      std::cout << "SoundStorm: DEBUG: no buffer assigned to this music - this should never happen!" << std::endl;
-      return 0;
-    }
+    //std::cout << "SoundStorm: ogg_callback_read: DEBUG: reading from deck " << thisdeck.id <<
+    //             " music " << &thismusic <<
+    //             " parent_deck " << thismusic->parent_deck <<
+    //             " buffer " << &(*thismusic->buffer.data()) <<
+    //             " size " << thismusic->buffer.size() <<
+    //             " seek " << thismusic->seek << std::endl;
   #endif // DEBUG_SOUNDSTORM
 
+  unsigned char *target = reinterpret_cast<unsigned char*>(ptr);
   unsigned int const bytes = cast_if_required<unsigned int>(size * count);
   unsigned int i = 0;
   for(; i != bytes; ++i) {
-    target[i] = thismusic->buffer->buffer[thismusic->seek];
-    //memcpy(ptr, thismusic->buffer->buffer, size * count);
-    ++thismusic->seek;
-    if(thismusic->seek == thismusic->buffer->buffersize) {
-      // advance the playlist
-      #ifdef DEBUG_SOUNDSTORM
-        std::cout << "SoundStorm: DEBUG: advancing playlist after " << thismusic->seek / 1024 << "KB played" << std::endl;
-      #endif // DEBUG_SOUNDSTORM
-      thismusic->seek = 0;                                                      // rewind so that we advance to 0 this frame
-      if(thisdeck->playlist.size() == 1) {
-        // no track queued after this
-        if(!thisdeck->repeat) {
-          delete thismusic;
-          thismusic = nullptr;
-          #ifdef DEBUG_SOUNDSTORM
-            std::cout << "SoundStorm: DEBUG: streamer finished playlist, not repeating after " << i << " bytes" << std::endl;
-          #endif // DEBUG_SOUNDSTORM
-          // create a short read
-          return i;
-        }
+    #ifdef SOUNDSTORM_STREAM_SEEK_ENABLE
+      if(thismusic->seek >= cast_if_required<ogg_int64_t>(thismusic->buffer.size())) {
         #ifdef DEBUG_SOUNDSTORM
-          std::cout << "SoundStorm: DEBUG: streamer finished playlist, repeating" << std::endl;
+          std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " read completed with short read of " << memorystorm::human_readable(i) << std::endl;
         #endif // DEBUG_SOUNDSTORM
-        // otherwise we just play this track from the start
-      } else {
-        #ifdef DEBUG_SOUNDSTORM
-          std::cout << "SoundStorm: DEBUG: streamer replacing music with top of playlist" << std::endl;
-        #endif // DEBUG_SOUNDSTORM
-        delete thismusic;
-        thisdeck->playlist.pop();                                               // take the current entry off the playlist
-        thismusic = thisdeck->playlist.front();                                 // tell the track to replace itself
+        return i;                                                               // we've reached the end of the file, so declare a short read
       }
-    }
-    // NOTE: could probably improve this using a block memcpy or std::copy
+      target[i] = thismusic->buffer[cast_if_required<size_t>(thismusic->seek)];
+      //memcpy(ptr, thismusic->buffer->buffer, size * count);
+      ++thismusic->seek;
+    #else
+      target[i] = thismusic->buffer[cast_if_required<size_t>(thismusic->seek)];
+      //memcpy(ptr, thismusic->buffer->buffer, size * count);
+      ++thismusic->seek;
+      if(thismusic->seek == cast_if_required<ogg_int64_t>(thismusic->buffer.size())) {
+        // advance the playlist
+        #ifdef DEBUG_SOUNDSTORM
+          std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " advancing playlist after " << thismusic->seek / 1024 << "KB played" << std::endl;
+        #endif // DEBUG_SOUNDSTORM
+        if(thisdeck.playlist.size() == 1) {
+          // no track queued after this
+          if(!thisdeck.repeat) {
+            thismusic.reset();
+            #ifdef DEBUG_SOUNDSTORM
+              std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " finished playlist, not repeating after " << i << " bytes" << std::endl;
+            #endif // DEBUG_SOUNDSTORM
+            // create a short read
+            return i;
+          }
+          #ifdef DEBUG_SOUNDSTORM
+            std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " finished playlist, repeating" << std::endl;
+          #endif // DEBUG_SOUNDSTORM
+          thismusic->seek = 0;                                                  // otherwise we just play this track from the start
+        } else {
+          #ifdef DEBUG_SOUNDSTORM
+            std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " replacing music with top of playlist" << std::endl;
+          #endif // DEBUG_SOUNDSTORM
+          thisdeck.playlist.pop();                                              // take the current entry off the playlist
+          if(thisdeck.playlist.empty()) {
+            //#ifdef DEBUG_SOUNDSTORM
+              std::cout << "SoundStorm: ogg_callback_read: DEBUG: deck " << thisdeck.id << " playlist finished in ogg read callback" << std::endl;
+            //#endif // DEBUG_SOUNDSTORM
+            return i;
+          }
+          thismusic = thisdeck.playlist.front();                                // tell the currently selected track to replace itself
+          thismusic->seek = 0;                                                  // rewind the next track to the beginning
+        }
+      }
+    #endif // SOUNDSTORM_STREAM_SEEK_ENABLE
   }
   #ifdef DEBUG_SOUNDSTORM
-    //std::cout << "SoundStorm: DEBUG: streamer read completed with " << i << " bytes" << std::endl;
+    //std::cout << "SoundStorm: ogg_callback_read: DEBUG: streamer deck " << thisdeck.id << " read completed with " << memorystorm::human_readable(i) << std::endl;
   #endif // DEBUG_SOUNDSTORM
   return i;
 }
@@ -615,28 +732,43 @@ int soundstorm::ogg_callback_seek(void *datasource, ogg_int64_t offset, int orig
   /// The interface is identical to that of fseek, and identical behaviour is expected
   if(!datasource) {
     #ifdef DEBUG_SOUNDSTORM
-      std::cout << "SoundStorm: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
+      std::cout << "SoundStorm: ogg_callback_seek: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
     #endif // DEBUG_SOUNDSTORM
     return 0;                                                                   // nullptr means we've got nothing playing
   }
-  deck *thisdeck = reinterpret_cast<deck*>(datasource);
-  music *thismusic = thisdeck->playlist.front();
+  deck &thisdeck = *reinterpret_cast<deck*>(datasource);
+  #ifndef NDEBUG
+    if(thisdeck.playlist.empty()) {
+      std::cout << "SoundStorm: ogg_callback_seek: WARNING: streamer seek called on deck " << thisdeck.id << " with empty playlist, this should be checked for in advance." << std::endl;
+      return 0;
+    }
+  #endif // NDEBUG
+  auto thismusic = thisdeck.playlist.front();
 
   switch(origin) {
   case SEEK_SET:
     thismusic->seek = offset;
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: ogg_callback_seek: DEBUG: streamer requested deck " << thisdeck.id << " absolute seek to " << offset << " - we are now at " << thismusic->seek << std::endl;
+    #endif // DEBUG_SOUNDSTORM
     break;
   case SEEK_CUR:
     thismusic->seek += offset;
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: ogg_callback_seek: DEBUG: streamer requested deck " << thisdeck.id << " relative seek by " << offset << " - we are now at " << thismusic->seek << std::endl;
+    #endif // DEBUG_SOUNDSTORM
     break;
   case SEEK_END:
-    #ifdef DEBUG_SOUNDSTORM
-      if(!thismusic->buffer) {
-        std::cout << "SoundStorm: DEBUG: no library music assigned to this playlist entry passed as datasource to ogg_callback_seek - this should never happen!" << std::endl;
+    #ifndef NDEBUG
+      if(thismusic->buffer.empty()) {
+        std::cout << "SoundStorm: ogg_callback_seek: ERROR: empty library music buffer assigned to this playlist entry on deck " << thisdeck.id << " - this should never happen!" << std::endl;
         return -1;
       }
+    #endif // NDEBUG
+    thismusic->seek = thismusic->buffer.size() + offset;
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: ogg_callback_seek: DEBUG: streamer requested deck " << thisdeck.id << " seek from end by " << offset << " - we are now at " << thismusic->seek << std::endl;
     #endif // DEBUG_SOUNDSTORM
-    thismusic->seek = thismusic->buffer->buffersize + offset;
     break;
   default:
     return -1;
@@ -644,9 +776,27 @@ int soundstorm::ogg_callback_seek(void *datasource, ogg_int64_t offset, int orig
   return 0;
 }
 
-int soundstorm::ogg_callback_close(void *datasource __attribute__((__unused__))) {
+int soundstorm::ogg_callback_close(void *datasource) {
   /// The interface is identical to that of fclose, and identical behaviour is expected
-  // we do absolutely nothing
+  if(!datasource) {
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: ogg_callback_close: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
+    #endif // DEBUG_SOUNDSTORM
+    return 0;                                                                   // nullptr means we've got nothing playing
+  }
+  deck &thisdeck = *reinterpret_cast<deck*>(datasource);
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: ogg_callback_close: DEBUG: streamer requested stream close on deck " << thisdeck.id << std::endl;
+  #endif // DEBUG_SOUNDSTORM
+  if(thisdeck.playlist.empty()) {
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: ogg_callback_close: DEBUG: streamer close called on deck " << thisdeck.id << " with empty playlist, nothing to do" << std::endl;
+    #endif // DEBUG_SOUNDSTORM
+    return 0;
+  }
+  auto thismusic = thisdeck.playlist.front();
+  thismusic->seek = 0;                                                          // seek back to the start of the stream
+  // we do absolutely nothing to actually close it
   return 0;
 }
 
@@ -654,12 +804,21 @@ long soundstorm::ogg_callback_tell(void *datasource) {
   /// The interface is identical to that of ftell, and identical behaviour is expected
   if(!datasource) {
     #ifdef DEBUG_SOUNDSTORM
-      std::cout << "SoundStorm: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
+      std::cout << "SoundStorm: ogg_callback_tell: DEBUG: datasource passed as nullptr to " << __PRETTY_FUNCTION__ << std::endl;
     #endif // DEBUG_SOUNDSTORM
     return 0;                                                                   // nullptr means we've got nothing playing
   }
-  deck *thisdeck = reinterpret_cast<deck*>(datasource);
-  return cast_if_required<long>(thisdeck->playlist.front()->seek);
+  deck &thisdeck = *reinterpret_cast<deck*>(datasource);
+  #ifndef NDEBUG
+    if(thisdeck.playlist.empty()) {
+      std::cout << "SoundStorm: ogg_callback_tell: WARNING: streamer tell called on deck " << thisdeck.id << " with empty playlist, this should be checked for in advance." << std::endl;
+      return 0;
+    }
+  #endif // NDEBUG
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: ogg_callback_tell: DEBUG: deck " << thisdeck.id << " requested stream tell - we are at " << thisdeck.playlist.front()->seek << std::endl;
+  #endif // DEBUG_SOUNDSTORM
+  return cast_if_required<long>(thisdeck.playlist.front()->seek);
 }
 
 unsigned int soundstorm::get_device_default() const {
@@ -805,9 +964,10 @@ void soundstorm::dump_stats() const {
 void soundstorm::dump_session_report() const {
   /// Output debugging statistics collected during the session
   #ifdef DEBUG_SOUNDSTORM
-    std::cout << "SoundStorm session report: HDR window max: " << session_max_hdr_window_bottom << " - " << session_max_hdr_window_top << std::endl;
-    std::cout << "SoundStorm session report: max simultaneous sounds " << session_max_simultaneous_sounds << std::endl;
-    std::cout << "SoundStorm session report: source distance min " << session_min_distance << " max " << session_max_distance << std::endl;
+    std::cout << "SoundStorm: DEBUG: session report: HDR window max: " << session_max_hdr_window_bottom << " - " << session_max_hdr_window_top << std::endl;
+    std::cout << "SoundStorm: DEBUG: session report: max simultaneous sounds " << session_max_simultaneous_sounds << std::endl;
+    std::cout << "SoundStorm: DEBUG: session report: source distance min " << session_min_distance << " max " << session_max_distance << std::endl;
+    std::cout << "SoundStorm: DEBUG: session report: music samples read " << session_music_samples_read << ", " << memorystorm::human_readable(session_music_samples_read * sizeof(float) * 2) << std::endl;
   #endif // DEBUG_SOUNDSTORM
 }
 void soundstorm::dump_device_info() {
@@ -904,7 +1064,7 @@ void soundstorm::set_master_volume(float newvolume) {
   volume_master = newvolume;
 }
 
-soundstorm::soundeffect *soundstorm::get_effect(unsigned int effect_id) const {
+std::shared_ptr<soundstorm::soundeffect> soundstorm::get_effect(unsigned int effect_id) const {
   /// Look up an effect in the library
   #ifdef NSOUND
     return nullptr;
@@ -922,7 +1082,7 @@ soundstorm::soundeffect *soundstorm::get_effect(unsigned int effect_id) const {
   return effect_library[effect_id];
 }
 
-soundstorm::music_buffer *soundstorm::get_music(unsigned int music_id) const {
+soundstorm::music_buffer soundstorm::get_music(unsigned int music_id) const {
   /// Look up a music track in the library
   #ifdef NSOUND
     return nullptr;
@@ -942,40 +1102,45 @@ unsigned int soundstorm::load(unsigned char const *buffer, size_t buffersize, fl
     return 0;
   #endif // NSOUND
   unsigned int const effectnum = cast_if_required<unsigned int>(effect_library.size());
-  soundeffect *thiseffect = new soundeffect;
-  thiseffect->buffer = reinterpret_cast<float const*>(buffer);                  // treat the buffer as one of 32bit floats
-  thiseffect->buffersize = buffersize / sizeof(float);                          // convert to our size in samples
+  auto thiseffect = std::make_shared<soundeffect>();
+  thiseffect->buffer = std::experimental::basic_string_view<float>(
+    reinterpret_cast<float const*>(buffer),                                     // treat the buffer as one of 32bit floats
+    buffersize / sizeof(float)                                                  // convert to our size in samples
+  );
   thiseffect->hdr_scale = hdr_scale;
   effect_library.emplace_back(thiseffect);
   #ifdef DEBUG_SOUNDSTORM
     // do some analysis
     float min = 0.0;
     float max = 0.0;
-    for(size_t i = 0; i != thiseffect->buffersize; ++i) {
-      if(thiseffect->buffer[i] < min) {
-        min = thiseffect->buffer[i];
+    for(auto &it : thiseffect->buffer) {
+      if(it < min) {
+        min = it;
       }
-      if(thiseffect->buffer[i] > max) {
-        max = thiseffect->buffer[i];
+      if(it > max) {
+        max = it;
       }
     }
-    std::cout << "SoundStorm: DEBUG: loaded effect " << effectnum << " from buffer, size " << buffersize << ", length " << static_cast<float>(buffersize) / samplerate << "s, min " << min << " max " << max << " (" << std::max(std::abs(min), max) * 100 << "% vol)" << std::endl;
+    std::cout << "SoundStorm: DEBUG: loaded effect " << effectnum <<
+                 " from buffer, size " << memorystorm::human_readable(buffersize) <<
+                 ", length " << static_cast<float>(buffersize) / samplerate <<
+                 "s, min " << min <<
+                 " max " << max <<
+                 " (" << std::max(std::abs(min), max) * 100 << "% vol)" << std::endl;
   #endif // DEBUG_SOUNDSTORM
   return effectnum;
 }
 
 unsigned int soundstorm::music_load(unsigned char const *buffer, size_t buffersize) {
-  /// Load a piece of music from a buffer into the librarym and return its new library id
+  /// Load a piece of music from a buffer into the library and return its new library id
   #ifdef NSOUND
     return 0;
   #endif // NSOUND
   unsigned int const tracknum = cast_if_required<unsigned int>(music_library.size());
-  music_buffer *thismusic = new music_buffer;
-  thismusic->buffer = buffer;
-  thismusic->buffersize = buffersize;
-  music_library.emplace_back(thismusic);
+  music_library.emplace_back(music_buffer(buffer, buffersize));
   #ifdef DEBUG_SOUNDSTORM
-    std::cout << "SoundStorm: DEBUG: loaded music " << tracknum << " from buffer, size " << buffersize << std::endl;
+    std::cout << "SoundStorm: DEBUG: loaded music " << tracknum <<
+                 " from buffer, size " << memorystorm::human_readable(buffersize) << std::endl;
   #endif // DEBUG_SOUNDSTORM
   return tracknum;
 }
@@ -994,7 +1159,7 @@ void soundstorm::play(unsigned int effect_id,
 
 void soundstorm::play(vec3f const &position,
                       vec3f const &velocity,
-                      soundeffect *effect,
+                      std::shared_ptr<soundeffect> effect,
                       float volume,
                       float seek_start,
                       float seek_end,
@@ -1015,7 +1180,7 @@ void soundstorm::play(vec3f const &position,
     }
   #endif // NDEBUG
   for(unsigned int channelnum = 0; channelnum != channels; ++channelnum) {
-    sound *thissound = new sound(effect, position, velocity, volume, seek_start, seek_end, seek_speed, nullptr, channelnum);
+    auto thissound = std::make_shared<sound>(effect, position, velocity, volume, seek_start, seek_end, seek_speed, nullptr, channelnum);
     playing.emplace_back(thissound);
     if(thissoundgroup) {
       thissoundgroup->emplace_back(thissound);
@@ -1040,7 +1205,7 @@ void soundstorm::play_loop(unsigned int effect_id,
 
 void soundstorm::play_loop(vec3f const &position,
                            vec3f const &velocity,
-                           soundeffect *effect,
+                           std::shared_ptr<soundeffect> effect,
                            float volume,
                            float seek_start,
                            float seek_end,
@@ -1078,7 +1243,7 @@ void soundstorm::play_loop(vec3f const &position,
   }
 }
 
-soundstorm::music *soundstorm::music_queue(unsigned int deck_id, unsigned int music_id) {
+std::shared_ptr<soundstorm::music> soundstorm::music_queue(unsigned int deck_id, unsigned int music_id) {
   /// Queue an item from the music library to play next on the specified deck
   #ifdef NSOUND
     return nullptr;
@@ -1092,11 +1257,14 @@ soundstorm::music *soundstorm::music_queue(unsigned int deck_id, unsigned int mu
       return nullptr;
     }
   #endif // NDEBUG
-  music *thismusic = new music;
+  auto thismusic = std::make_shared<music>();
   thismusic->parent = this;
-  thismusic->parent_deck = &decks[deck_id];
+  thismusic->parent_deck = deck_id;
   thismusic->buffer = get_music(music_id);
   decks[deck_id].playlist.emplace(thismusic);
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: DEBUG: queued music "<< music_id << " on deck " << deck_id << ", playlist size now " << decks[deck_id].playlist.size() << std::endl;
+  #endif // DEBUG_SOUNDSTORM
   return thismusic;
 }
 
@@ -1122,6 +1290,9 @@ void soundstorm::set_music_volume(unsigned int deck_id, float newvolume) {
   decks[deck_id].volume = newvolume;
   decks[deck_id].volume_target = newvolume;
   decks[deck_id].volume_fadespeed = 0.0;
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: DEBUG: set volume on deck " << deck_id << " to " << newvolume << std::endl;
+  #endif // DEBUG_SOUNDSTORM
 }
 
 void soundstorm::fade_music_volume(unsigned int deck_id, float newvolume, float seconds_to_take) {
@@ -1134,6 +1305,9 @@ void soundstorm::fade_music_volume(unsigned int deck_id, float newvolume, float 
   #endif // NDEBUG
   decks[deck_id].volume_fadespeed = std::abs(newvolume - decks[deck_id].volume) / (seconds_to_take * samplerate); // this comes first since we're threaded
   decks[deck_id].volume_target = newvolume;
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: DEBUG: fading volume on deck " << deck_id << " to " << newvolume << " over " << seconds_to_take << "s" << std::endl;
+  #endif // DEBUG_SOUNDSTORM
 }
 
 void soundstorm::crossfade_music(float seconds_to_take, unsigned int deck_from, unsigned int deck_to) {
@@ -1142,12 +1316,15 @@ void soundstorm::crossfade_music(float seconds_to_take, unsigned int deck_from, 
   float const volume1 = decks[deck_to  ].volume_target;
   fade_music_volume(deck_from, volume1, seconds_to_take);
   fade_music_volume(deck_to,   volume0, seconds_to_take);
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: DEBUG: crossfading from deck " << deck_from << " to " << deck_to << " over " << seconds_to_take << "s" << std::endl;
+  #endif // DEBUG_SOUNDSTORM
 }
 
 void soundstorm::stop(soundgroup const &thissoundgroup) {
   /// Make this sound stop immediately
   for(auto const &thissound : thissoundgroup) {                                 // do this for each channel
-    thissound->seek = static_cast<float>(thissound->effect->buffersize);
+    thissound->seek = static_cast<float>(thissound->effect->buffer.size());
   }
 }
 
@@ -1158,7 +1335,11 @@ void soundstorm::stop_loop(soundgroup const &thissoundgroup) {
   }
 }
 
-void soundstorm::replace(soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start, float seek_end, float seek_speed) {
+void soundstorm::replace(soundgroup const &thissoundgroup,
+                         std::shared_ptr<soundeffect> neweffect,
+                         float seek_start,
+                         float seek_end,
+                         float seek_speed) {
   /// Immediately replace the currently playing sound with a new effect with the specified parameters
   #ifndef NDEBUG
     if(!neweffect) {                                                            // null check only in debug mode
@@ -1174,12 +1355,23 @@ void soundstorm::replace(soundgroup const &thissoundgroup, soundeffect *neweffec
   }
 }
 
-void soundstorm::follow(soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start, float seek_end, float seek_speed) {
+void soundstorm::follow(soundgroup const &thissoundgroup,
+                        std::shared_ptr<soundeffect> neweffect,
+                        float seek_start,
+                        float seek_end,
+                        float seek_speed) {
   /// Append another sound to play immediately once this one completes, with the specified parameters
   /// (or specify nullptr to cancel a following sound)
   for(auto const &thissound : thissoundgroup) {                                 // do this for each channel
-    sound *newsound = new sound(neweffect, thissound->position, thissound->velocity, thissound->volume, seek_start, seek_end, seek_speed, nullptr, thissound->channel);
-    thissound->next_sound = newsound;
+    thissound->next_sound = std::make_shared<sound>(neweffect,
+                                                    thissound->position,
+                                                    thissound->velocity,
+                                                    thissound->volume,
+                                                    seek_start,
+                                                    seek_end,
+                                                    seek_speed,
+                                                    nullptr,
+                                                    thissound->channel);
   }
 }
 
@@ -1188,6 +1380,9 @@ void soundstorm::set_volume(soundgroup const &thissoundgroup, float newvolume) {
   for(auto const &thissound : thissoundgroup) {
     thissound->volume = newvolume;
   }
+  #ifdef DEBUG_SOUNDSTORM
+    //std::cout << "SoundStorm: DEBUG: set sound group " << &thissoundgroup << " volume to " << newvolume << std::endl;
+  #endif // DEBUG_SOUNDSTORM
 }
 
 void soundstorm::set_position(soundgroup const &thissoundgroup, vec3f const &newposition) {
@@ -1195,6 +1390,9 @@ void soundstorm::set_position(soundgroup const &thissoundgroup, vec3f const &new
   for(auto const &thissound : thissoundgroup) {
     thissound->position = newposition;
   }
+  #ifdef DEBUG_SOUNDSTORM
+    //std::cout << "SoundStorm: DEBUG: set sound group " << &thissoundgroup << " position to " << newposition << std::endl;
+  #endif // DEBUG_SOUNDSTORM
 }
 
 void soundstorm::set_seek_speed(soundgroup const &thissoundgroup, float newspeed) {
@@ -1202,20 +1400,35 @@ void soundstorm::set_seek_speed(soundgroup const &thissoundgroup, float newspeed
   for(auto const &thissound : thissoundgroup) {
     thissound->seek_speed = newspeed;
   }
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: DEBUG: set sound group " << &thissoundgroup << " seek speed to " << newspeed << std::endl;
+  #endif // DEBUG_SOUNDSTORM
 }
 
 void soundstorm::music_clear(unsigned int deck_id) {
   /// Clear the playlist on the specified deck
+  #ifdef DEBUG_SOUNDSTORM
+    std::cout << "SoundStorm: DEBUG: clearing deck " << deck_id << std::endl;
+  #endif // DEBUG_SOUNDSTORM
   #ifndef NDEBUG
     if(deck_id >= decks.size()) {                                               // safety check only in debug mode
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with deck_id " << deck_id << " exceeding available decks!" << std::endl;
       return;
     }
   #endif // NDEBUG
-  while(!decks[deck_id].playlist.empty()) {
-    delete decks[deck_id].playlist.front();
-    decks[deck_id].playlist.pop();
-    //decks[deck_id].buffer_read_seek = deck_buffer_size;                         // wind it to the end of the current buffer
-    //decks[deck_id].buffer_needs_filled = true;
+  auto &thisdeck(decks[deck_id]);
+  while(!thisdeck.playlist.empty()) {
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: DEBUG: clearing deck " << deck_id << " playlist, size now " << thisdeck.playlist.size() << std::endl;
+    #endif // DEBUG_SOUNDSTORM
+    thisdeck.playlist.pop();
+    //thisdeck.buffer_read_seek = deck_buffer_size;                               // wind it to the end of the current buffer
+    //thisdeck.buffer_needs_filled = true;
+  }
+  if(thisdeck.oggfile) {
+    #ifdef DEBUG_SOUNDSTORM
+      std::cout << "SoundStorm: DEBUG: deck " << deck_id << " oggfile exists, queuing to reset" << std::endl;
+    #endif // DEBUG_SOUNDSTORM
+    thisdeck.clear_old_oggfile = true;                                          // tell the decoder we want to stop it in its own thread
   }
 }

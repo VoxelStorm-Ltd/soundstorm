@@ -1,10 +1,15 @@
 #ifndef SOUNDSTORM_H_INCLUDED
 #define SOUNDSTORM_H_INCLUDED
 
+#ifndef SOUNDSTORM_NO_STREAM_SEEK
+  #define SOUNDSTORM_STREAM_SEEK_ENABLE
+#endif // SOUNDSTORM_NO_STREAM_SEEK
+
 #include <vector>
 #include <list>
 #include <queue>
 #include <thread>
+#include <experimental/string_view>
 #include <portaudiocpp/PortAudioCpp.hxx>
 #include <ogg/os_types.h>
 #include <vorbis/vorbisfile.h>
@@ -17,6 +22,7 @@ class soundstorm {
   /// define DEBUG_SOUNDSTORM for detailed debugging output
   /// define SOUNDSTORM_NO_SSE to avoid using Intel SSE intrinsics
   /// define NSOUND to disable all sound output
+  /// define SOUNDSTORM_NO_STREAM_SEEK to disable stream seeking support, which may have both performance gains and penalties
 public:
   enum channel_type : size_t {                                                  // output channels used as array indices
     /// see http://en.wikipedia.org/wiki/Surround_sound#Standard_speaker_channels
@@ -44,23 +50,22 @@ public:
   };
   struct soundeffect {
     /// Stored uncompressed sound effects in memory
-    float const *buffer = nullptr;                                              // the sound sample itself, in 32bit float format
-    size_t buffersize = 0;                                                      // the size of the buffer
+    std::experimental::basic_string_view<float> buffer;                         // the sound sample itself, in 32bit float format
     std::vector<float> envelope;                                                // its volume envelope
     float hdr_scale = 1.0f;                                                     // fraction of max dynamic range, from 0 to 1 (or more to boost)
   };
   struct sound {
     /// A currently playing sound
-    soundeffect *effect = nullptr;                                              // the library effect this is playing
+    std::shared_ptr<soundeffect> effect;                                        // the library effect this is playing
     vec3f position;                                                             // its location in 3D space
     vec3f velocity;                                                             // its cached velocity through the medium
     float volume     = 1.0f;                                                    // fraction of max effect volume, from 0 to 1 (or more to boost)
     float seek       = 0.0f;                                                    // seek position inside the buffer, in buffer frames - floating point!
     float seek_end   = 0.0f;                                                    // where to cut off at before end of sample, 0 means play to the end
     float seek_speed = 1.0f;                                                    // how fast we're playing, can be negative but sound won't finish normally
-    sound *next_sound = nullptr;                                                // sound to play immediately following this, if any
+    std::shared_ptr<sound> next_sound;                                          // sound to play immediately following this, if any
     unsigned int channel = 0;                                                   // which channel it's heard on - one sound per output channel!
-    sound(soundeffect *new_effect,
+    sound(std::shared_ptr<soundeffect> new_effect,
           vec3f const &new_position,
           vec3f const &new_velocity,
           float new_volume     = 1.0f,
@@ -69,7 +74,7 @@ public:
           float new_seek_speed = 1.0f,
           sound *new_next_sound = nullptr,
           unsigned int new_channel = 0)
-      : effect(new_effect),
+      : effect(std::move(new_effect)),
         position(new_position),
         velocity(new_velocity),
         volume(new_volume),
@@ -81,16 +86,13 @@ public:
       /// Specific constructor
     }
   };
-  using soundgroup = std::vector<sound*>;                                       // all of the channel components that make up a sound
-  struct music_buffer {
-    unsigned char const *buffer = nullptr;                                      // the buffer containing encoded music, in ogg vorbis format
-    ogg_int64_t buffersize = 0;                                                 // the size of the buffer
-  };
+  using soundgroup = std::vector<std::shared_ptr<sound>>;                       // all of the channel components that make up a sound
+  using music_buffer = std::experimental::basic_string_view<unsigned char>;     // the buffer containing encoded music, in ogg vorbis format
   struct deck;                                                                  // forward declaration for next struct
   struct music {
     soundstorm *parent = nullptr;                                               // pointer back to the class it belongs to, for passing to callbacks
-    deck *parent_deck = nullptr;                                                // what deck it's being played on
-    music_buffer *buffer = nullptr;                                             // where this is stored
+    unsigned int parent_deck = 0;                                               // what deck it's being played on
+    music_buffer buffer;                                                        // where this is stored
     ogg_int64_t seek = 0;                                                       // stream style position offset
   };
   struct deck {
@@ -98,17 +100,20 @@ public:
     float volume           __attribute__((__aligned__(16))) = 1.0;              // how loud to play this current deck, 0-1 (but may exceed 1 for special effects)
     float volume_target    __attribute__((__aligned__(16))) = 1.0;              // what to fade towards, if anything
     float volume_fadespeed __attribute__((__aligned__(16))) = 0.0;              // how fast to fade
-    OggVorbis_File *oggfile = nullptr;                                          // the internal ogg vorbis handle
-    std::queue<music*> playlist;                                                // what's playing now (front) and what to play next
+    unsigned int id = 0;                                                        // what index into the deck vector this is
+    std::unique_ptr<OggVorbis_File> oggfile;                                    // the internal ogg vorbis handle
+    std::queue<std::shared_ptr<music>> playlist;                                // what's playing now (front) and what to play next
     std::vector<float> buffer_l[2];                                             // ping-pong buffer pair, left channel
     std::vector<float> buffer_r[2];                                             // ping-pong buffer pair, right channel
     unsigned int buffer_read = 0;                                               // which ping-pong buffer we're reading from
     unsigned int buffer_read_seek = 0;                                          // where in the buffer we've read to
     #ifdef DEBUG_SOUNDSTORM
-      unsigned int checkvalue = 123456;                                         // debug check value, this is the nearest we get to runtime type safety
+      static unsigned int constexpr const correct_checkvalue = 123456;
+      unsigned int checkvalue = correct_checkvalue;                             // debug check value, this is the nearest we get to runtime type safety
     #endif // DEBUG_SOUNDSTORM
     bool repeat = true;                                                         // at the end of the playlist last entry repeats indefinitely - if not, deck outputs silence
     bool buffer_needs_filled = true;                                            // whether the currently selected write buffer needs to be filled
+    bool clear_old_oggfile = false;                                             // whether we have an obsolete oggfile we have to close this round
   };
 
 private:
@@ -118,7 +123,7 @@ private:
   //float hdr_dropback_rate  __attribute__((__aligned__(16))) = 1.0 / samplerate * frames_per_buffer; // amount subtracted per buffer fill
   float hdr_dropback_rate  __attribute__((__aligned__(16))) = 0.995f;           // scaling multiplier per buffer fill
 
-  std::thread *streamer_thread = nullptr;                                       // thread for the streaming decoder
+  std::thread streamer_thread;                                                  // thread for the streaming decoder
 
   portaudio::System *audio_system = nullptr;
   portaudio::Device const *audio_device = nullptr;
@@ -138,15 +143,15 @@ private:
   unsigned int num_decks = 2;                                                   // how many music decks we're currently using
   unsigned int deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f); // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
 
-  //portaudio::DirectionSpecificStreamParameters *stream_in_params  = nullptr;
-  portaudio::DirectionSpecificStreamParameters *stream_out_params = nullptr;
-  portaudio::StreamParameters                  *stream_params     = nullptr;
-  portaudio::MemFunCallbackStream<soundstorm>  *stream            = nullptr;
+  //std::unique_ptr<portaudio::DirectionSpecificStreamParameters> stream_in_params;
+  std::unique_ptr<portaudio::DirectionSpecificStreamParameters> stream_out_params;
+  std::unique_ptr<portaudio::StreamParameters>                  stream_params;
+  std::unique_ptr<portaudio::MemFunCallbackStream<soundstorm>>  stream;
 
   std::vector<ear> ears;                                                        // the listeners for each output channel
-  std::vector<soundeffect*> effect_library;                                     // the sound effects
-  std::list<sound*> playing;                                                    // currently playing sounds
-  std::vector<music_buffer*> music_library;                                     // the music buffers
+  std::vector<std::shared_ptr<soundeffect>> effect_library;                     // the sound effects
+  std::list<std::shared_ptr<sound>> playing;                                    // currently playing sounds
+  std::vector<music_buffer> music_library;                                      // the music buffers
   std::vector<deck> decks;                                                      // music decks control what music is currently playing
 
   float volume_master = 1.0;                                                    // global output volume control, from 0 to 1 (although possible to go outside this)
@@ -163,6 +168,7 @@ private:
     unsigned int session_max_simultaneous_sounds = 0;
     float session_min_distance = 10000.0f;
     float session_max_distance = 0.0f;
+    size_t session_music_samples_read = 0;
   #endif // DEBUG_SOUNDSTORM
 
 public:
@@ -187,8 +193,12 @@ public:
   void streamer();
   static size_t ogg_callback_read( void *ptr, size_t size, size_t count, void *datasource);
   static int    ogg_callback_seek( void *datasource, ogg_int64_t offset, int origin);
-  static int    ogg_callback_close(void *datasource) __attribute__((__const__));
-  static long   ogg_callback_tell( void *datasource) __attribute__((__pure__));
+  static int    ogg_callback_close(void *datasource);
+  #ifdef NDEBUG
+    static long ogg_callback_tell( void *datasource) __attribute__((__pure__));
+  #else
+    static long ogg_callback_tell( void *datasource);
+  #endif // NDEBUG
 
   // devices
   unsigned int get_device_default() const;
@@ -207,7 +217,11 @@ public:
   double get_sample_rate() const;
   double get_time() const;
   void dump_stats() const;
-  void dump_session_report() const __attribute__((__const__));
+  #ifdef DEBUG_SOUNDSTORM
+    void dump_session_report() const;
+  #else
+    void dump_session_report() const __attribute__((__const__));
+  #endif // DEBUG_SOUNDSTORM
   void dump_device_info();
 
   // state
@@ -223,17 +237,17 @@ public:
   void set_master_volume(float newvolume);
 
   // library
-  soundeffect *get_effect(unsigned int effect_id) const __attribute__((__pure__));
-  music_buffer *get_music(unsigned int music_id)  const __attribute__((__pure__));
+  std::shared_ptr<soundeffect> get_effect(unsigned int effect_id) const __attribute__((__pure__));
+  music_buffer get_music(unsigned int music_id)  const __attribute__((__pure__));
   unsigned int load(unsigned char const *buffer, size_t buffersize, float hdr_scale = 1.0);
   unsigned int music_load(unsigned char const *buffer, size_t buffersize);
 
   // playback control
   void play(     unsigned int effect_id, vec3f const &position, vec3f const &velocity, float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
-  void play(     vec3f const &position, vec3f const &velocity, soundeffect *effect,    float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
+  void play(     vec3f const &position, vec3f const &velocity, std::shared_ptr<soundeffect> effect,    float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
   void play_loop(unsigned int effect_id, vec3f const &position, vec3f const &velocity, float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
-  void play_loop(vec3f const &position, vec3f const &velocity, soundeffect *effect,    float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
-  music *music_queue(unsigned int deck_id, unsigned int music_id);
+  void play_loop(vec3f const &position, vec3f const &velocity, std::shared_ptr<soundeffect> effect,    float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);
+  std::shared_ptr<music> music_queue(unsigned int deck_id, unsigned int music_id);
   #ifdef NDEBUG
     float get_music_volume(unsigned int deck_id) __attribute__((__pure__));
   #else
@@ -244,8 +258,8 @@ public:
   void crossfade_music(float seconds_to_take, unsigned int deck_from = 0, unsigned int deck_to = 1);
   void stop(          soundgroup const &thissoundgroup);
   void stop_loop(     soundgroup const &thissoundgroup);
-  void replace(       soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f);
-  void follow(        soundgroup const &thissoundgroup, soundeffect *neweffect, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f);
+  void replace(       soundgroup const &thissoundgroup, std::shared_ptr<soundeffect> neweffect, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f);
+  void follow(        soundgroup const &thissoundgroup, std::shared_ptr<soundeffect> neweffect, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f);
   void set_volume(    soundgroup const &thissoundgroup, float newvolume);
   void set_position(  soundgroup const &thissoundgroup, vec3f const &newposition);
   void set_seek_speed(soundgroup const &thissoundgroup, float newspeed);
