@@ -383,7 +383,7 @@ int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
       if(thisdeck.volume != thisdeck.volume_target) {
         // perform any fades we need to
         #ifdef SOUNDSTORM_NO_SSE
-          thisdeck.volume += boost::clamp(thisdeck.volume_target - thisdeck.volume, -thisdeck.volume_fadespeed, thisdeck.volume_fadespeed);
+          thisdeck.volume += std::clamp(thisdeck.volume_target - thisdeck.volume, -thisdeck.volume_fadespeed, thisdeck.volume_fadespeed);
         #else
           static __m128 const signmask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000)); // SSE intrinsic bitmask for float sign
           //__m128 volume_shift = _mm_sub_ss(_mm_set_ss(thisdeck.volume_target), _mm_set_ss(thisdeck.volume)); // SSE intrinsics: subtract
