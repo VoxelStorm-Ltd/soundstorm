@@ -264,11 +264,11 @@ void soundstorm::stop_streamer() {
   streamer_thread = std::thread();                                              // reset the thread
 }
 
-int soundstorm::mixer(void const *buffer_in __attribute__((__unused__)),
+int soundstorm::mixer(void const *buffer_in [[maybe_unused]],
                       void *buffer_out,
                       unsigned long frames,
-                      PaStreamCallbackTimeInfo const *time_info __attribute__((__unused__)),
-                      PaStreamCallbackFlags status_flags __attribute__((__unused__))) {
+                      PaStreamCallbackTimeInfo const *time_info [[maybe_unused]],
+                      PaStreamCallbackFlags status_flags [[maybe_unused]]) {
   /// The callback that feeds sample data to the sound stream
   #ifdef DEBUG_SOUNDSTORM
     assert(buffer_out);
