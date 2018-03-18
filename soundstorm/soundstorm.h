@@ -9,7 +9,7 @@
 #include <list>
 #include <queue>
 #include <thread>
-#include <experimental/string_view>
+#include <string_view>
 #include <portaudiocpp/PortAudioCpp.hxx>
 #include <ogg/os_types.h>
 #include <vorbis/vorbisfile.h>
@@ -50,7 +50,7 @@ public:
   };
   struct soundeffect {
     /// Stored uncompressed sound effects in memory
-    std::experimental::basic_string_view<float> buffer;                         // the sound sample itself, in 32bit float format
+    std::basic_string_view<float> buffer;                                       // the sound sample itself, in 32bit float format
     std::vector<float> envelope;                                                // its volume envelope
     float hdr_scale = 1.0f;                                                     // fraction of max dynamic range, from 0 to 1 (or more to boost)
   };
@@ -87,12 +87,11 @@ public:
     }
   };
   using soundgroup = std::vector<std::shared_ptr<sound>>;                       // all of the channel components that make up a sound
-  using music_buffer = std::experimental::basic_string_view<unsigned char>;     // the buffer containing encoded music, in ogg vorbis format
   struct deck;                                                                  // forward declaration for next struct
   struct music {
     soundstorm *parent = nullptr;                                               // pointer back to the class it belongs to, for passing to callbacks
     unsigned int parent_deck = 0;                                               // what deck it's being played on
-    music_buffer buffer;                                                        // where this is stored
+    std::string_view buffer;                                                    // where this is stored
     ogg_int64_t seek = 0;                                                       // stream style position offset
   };
   struct deck {
@@ -151,7 +150,7 @@ private:
   std::vector<ear> ears;                                                        // the listeners for each output channel
   std::vector<std::shared_ptr<soundeffect>> effect_library;                     // the sound effects
   std::list<std::shared_ptr<sound>> playing;                                    // currently playing sounds
-  std::vector<music_buffer> music_library;                                      // the music buffers
+  std::vector<std::string_view> music_library;                                  // the music buffers
   std::vector<deck> decks;                                                      // music decks control what music is currently playing
 
   float volume_master = 1.0;                                                    // global output volume control, from 0 to 1 (although possible to go outside this)
@@ -238,9 +237,9 @@ public:
 
   // library
   std::shared_ptr<soundeffect> get_effect(unsigned int effect_id) const __attribute__((__pure__));
-  music_buffer get_music(unsigned int music_id)  const __attribute__((__pure__));
-  unsigned int load(unsigned char const *buffer, size_t buffersize, float hdr_scale = 1.0);
-  unsigned int music_load(unsigned char const *buffer, size_t buffersize);
+  std::string_view get_music(unsigned int music_id)  const __attribute__((__pure__));
+  unsigned int load(std::string_view buffer, float hdr_scale = 1.0);
+  unsigned int music_load(std::string_view buffer);
 
   // playback control
   void play(     unsigned int effect_id, vec3f const &position, vec3f const &velocity, float volume = 1.0f, float seek_start = 0.0f, float seek_end = 0.0f, float seek_speed = 1.0f, soundgroup *thissoundgroup = nullptr);

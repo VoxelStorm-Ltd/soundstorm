@@ -1082,7 +1082,7 @@ std::shared_ptr<soundstorm::soundeffect> soundstorm::get_effect(unsigned int eff
   return effect_library[effect_id];
 }
 
-soundstorm::music_buffer soundstorm::get_music(unsigned int music_id) const {
+std::string_view soundstorm::get_music(unsigned int music_id) const {
   /// Look up a music track in the library
   #ifdef NSOUND
     return nullptr;
@@ -1096,16 +1096,16 @@ soundstorm::music_buffer soundstorm::get_music(unsigned int music_id) const {
   return music_library[music_id];
 }
 
-unsigned int soundstorm::load(unsigned char const *buffer, size_t buffersize, float hdr_scale) {
+unsigned int soundstorm::load(std::string_view buffer, float hdr_scale) {
   /// Load a sound from a buffer into the library, and return its new library id
   #ifdef NSOUND
     return 0;
   #endif // NSOUND
   unsigned int const effectnum = cast_if_required<unsigned int>(effect_library.size());
   auto thiseffect = std::make_shared<soundeffect>();
-  thiseffect->buffer = std::experimental::basic_string_view<float>(
-    reinterpret_cast<float const*>(buffer),                                     // treat the buffer as one of 32bit floats
-    buffersize / sizeof(float)                                                  // convert to our size in samples
+  thiseffect->buffer = std::basic_string_view<float>(
+    reinterpret_cast<float const*>(buffer.data()),                              // treat the buffer as one of 32bit floats
+    buffer.size() / sizeof(float)                                               // convert to our size in samples
   );
   thiseffect->hdr_scale = hdr_scale;
   effect_library.emplace_back(thiseffect);
@@ -1131,16 +1131,16 @@ unsigned int soundstorm::load(unsigned char const *buffer, size_t buffersize, fl
   return effectnum;
 }
 
-unsigned int soundstorm::music_load(unsigned char const *buffer, size_t buffersize) {
+unsigned int soundstorm::music_load(std::string_view buffer) {
   /// Load a piece of music from a buffer into the library and return its new library id
   #ifdef NSOUND
     return 0;
   #endif // NSOUND
   unsigned int const tracknum = cast_if_required<unsigned int>(music_library.size());
-  music_library.emplace_back(music_buffer(buffer, buffersize));
+  music_library.emplace_back(buffer);
   #ifdef DEBUG_SOUNDSTORM
     std::cout << "SoundStorm: DEBUG: loaded music " << tracknum <<
-                 " from buffer, size " << memorystorm::human_readable(buffersize) << std::endl;
+                 " from buffer, size " << memorystorm::human_readable(buffer.size()) << std::endl;
   #endif // DEBUG_SOUNDSTORM
   return tracknum;
 }
