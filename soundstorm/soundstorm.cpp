@@ -246,6 +246,7 @@ void soundstorm::start_streamer() {
   // start the streaming decoder thread
   #ifndef NSOUND
     streamer_thread = std::thread(std::bind(&soundstorm::streamer, this));
+    pthread_setname_np(streamer_thread.native_handle(), "SoundStorm");
   #endif // NSOUND
 }
 
