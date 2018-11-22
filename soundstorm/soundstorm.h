@@ -216,11 +216,7 @@ public:
   double get_sample_rate() const;
   double get_time() const;
   void dump_stats() const;
-  #ifdef DEBUG_SOUNDSTORM
-    void dump_session_report() const;
-  #else
-    void dump_session_report() const __attribute__((__const__));
-  #endif // DEBUG_SOUNDSTORM
+  void dump_session_report() const;
   void dump_device_info();
 
   // state
