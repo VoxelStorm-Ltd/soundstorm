@@ -1086,12 +1086,12 @@ std::shared_ptr<soundstorm::soundeffect> soundstorm::get_effect(unsigned int eff
 std::string_view soundstorm::get_music(unsigned int music_id) const {
   /// Look up a music track in the library
   #ifdef NSOUND
-    return nullptr;
+    return {};
   #endif // NSOUND
   #ifndef NDEBUG
     if(music_id >= music_library.size()) {
       std::cout << "SoundStorm: Error: Called " << __PRETTY_FUNCTION__ << " with music_id " << music_id << " exceeding library size!" << std::endl;
-      return nullptr;
+      return {};
     }
   #endif // NDEBUG
   return music_library[music_id];
