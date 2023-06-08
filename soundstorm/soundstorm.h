@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <list>
+#include <memory>
 #include <queue>
 #include <thread>
 #include <string_view>
