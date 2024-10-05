@@ -108,7 +108,7 @@ public:
     unsigned int buffer_read = 0;                                               // which ping-pong buffer we're reading from
     unsigned int buffer_read_seek = 0;                                          // where in the buffer we've read to
     #ifdef DEBUG_SOUNDSTORM
-      static unsigned int constexpr const correct_checkvalue = 123456;
+      static unsigned int constexpr correct_checkvalue = 123456;
       unsigned int checkvalue = correct_checkvalue;                             // debug check value, this is the nearest we get to runtime type safety
     #endif // DEBUG_SOUNDSTORM
     bool repeat = true;                                                         // at the end of the playlist last entry repeats indefinitely - if not, deck outputs silence
@@ -133,13 +133,13 @@ private:
   unsigned int num_devices = 0;                                                 // number of known devices
   unsigned int channels = 2;                                                    // output channels
   float samplerate = 44100.0f;                                                  // output sample rate
-  static float constexpr const speed_of_sound = 343.0f;                         // speed of sound in air, m/s
-  static float constexpr const ear_offset = 0.115f;                             // distance of ear from the centre of the head, metres
-  static float constexpr const head_shadow_time = 0.000660f;                    // measured max pan head shadow time, seconds (see http://en.wikipedia.org/wiki/Interaural_time_difference#Duplex_theory)
+  static float constexpr speed_of_sound = 343.0f;                               // speed of sound in air, m/s
+  static float constexpr ear_offset = 0.115f;                                   // distance of ear from the centre of the head, metres
+  static float constexpr head_shadow_time = 0.000660f;                          // measured max pan head shadow time, seconds (see http://en.wikipedia.org/wiki/Interaural_time_difference#Duplex_theory)
   // how much extra time delay to add to the far sound for head shadow effect at full pan:
-  static float constexpr const head_shadow_delay_max = head_shadow_time - (ear_offset / speed_of_sound);
+  static float constexpr head_shadow_delay_max = head_shadow_time - (ear_offset / speed_of_sound);
   // how much the opposite ear is shadowed by the head, realistic ~= 6.4dB, we're going for somewhat of an exaggeration:
-  static float constexpr const head_shadow_attenuation = 0.9f;
+  static float constexpr head_shadow_attenuation = 0.9f;
   unsigned int num_decks = 2;                                                   // how many music decks we're currently using
   unsigned int deck_buffer_size = static_cast<unsigned int>(samplerate * 2.0f); // how many pcm frames to buffer for each deck buffer - this is the minimum pre-loaded at one time
 

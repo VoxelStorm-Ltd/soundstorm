@@ -618,7 +618,7 @@ void soundstorm::streamer() {
         #endif // DEBUG_SOUNDSTORM
       }
     }
-    float constexpr const buffer_fill_sleep = 1.0f / 4.0f;                      // sleep for this fraction of buffer fill time to avoid spin-waiting
+    constexpr float buffer_fill_sleep = 1.0f / 4.0f;                            // sleep for this fraction of buffer fill time to avoid spin-waiting
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<unsigned int>(1000.0f * static_cast<float>(deck_buffer_size) / samplerate * 0.5f * buffer_fill_sleep)));
   } while(streamer_run);
 
