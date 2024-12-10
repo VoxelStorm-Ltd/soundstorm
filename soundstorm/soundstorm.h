@@ -1,5 +1,4 @@
-#ifndef SOUNDSTORM_H_INCLUDED
-#define SOUNDSTORM_H_INCLUDED
+#pragma once
 
 #ifndef SOUNDSTORM_NO_STREAM_SEEK
   #define SOUNDSTORM_STREAM_SEEK_ENABLE
@@ -261,5 +260,3 @@ public:
   void set_seek_speed(soundgroup const &thissoundgroup, float newspeed);
   void music_clear(unsigned int deck_id);
 };
-
-#endif // SOUNDSTORM_H_INCLUDED

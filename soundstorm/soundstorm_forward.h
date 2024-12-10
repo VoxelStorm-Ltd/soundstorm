@@ -1,6 +1,3 @@
-#ifndef SOUNDSTORM_FORWARD_H_INCLUDED
-#define SOUNDSTORM_FORWARD_H_INCLUDED
+#pragma once
 
 class soundstorm;
-
-#endif // SOUNDSTORM_FORWARD_H_INCLUDED
