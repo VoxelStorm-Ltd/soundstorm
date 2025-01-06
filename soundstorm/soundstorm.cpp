@@ -6,6 +6,7 @@
   #include <xmmintrin.h>
 #endif // SOUNDSTORM_NO_SSE
 #ifdef PLATFORM_LINUX
+  #include <pthread.h>
   #include <pa_linux_alsa.h>
 #endif // PLATFORM_LINUX
 #ifndef NDEBUG
@@ -246,7 +247,9 @@ void soundstorm::start_streamer() {
   // start the streaming decoder thread
   #ifndef NSOUND
     streamer_thread = std::thread(std::bind(&soundstorm::streamer, this));
-    pthread_setname_np(streamer_thread.native_handle(), "SoundStorm");
+    #ifdef PLATFORM_LINUX
+      pthread_setname_np(streamer_thread.native_handle(), "SoundStorm");
+    #endif // PLATFORM_LINUX
   #endif // NSOUND
 }
 
