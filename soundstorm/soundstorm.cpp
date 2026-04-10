@@ -12,9 +12,7 @@
 #ifndef NDEBUG
   #include <cassert>
 #endif // NDEBUG
-#ifdef VECTORSTORM_NO_BOOST
-  #include <boost/range/iterator_range_core.hpp>
-#endif // VECTORSTORM_NO_BOOST
+#include <boost/range/iterator_range.hpp>
 #ifdef DEBUG_SOUNDSTORM
   #include "memorystorm/memorystorm.h"
 #endif // DEBUG_SOUNDSTORM
